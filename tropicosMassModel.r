@@ -11,9 +11,7 @@
 ### get GADM ###
 ### retrieve species data from GBIF ###
 ### process species data from GBIF ###
-### download species data from BIEN ###
-### model ###
-
+### retrieve species data from BIEN ###
 ### model ###
 
 #############
@@ -33,8 +31,9 @@
 
 	options(stringsAsFactors=FALSE)
 	
-	these <- 1:20 # IP
-	# these <- 101:200 # IP
+	# these <- 1:80 # DONE!
+	these <- 81:120 # IP
+	# these <- 121:160 # IP
 	
 	### settings
 	############
@@ -192,7 +191,7 @@ omnibus::say('##################################################################
 	
 		load('./regions/gadm2_worldclim.rda')
 		load('./regions/gadm1.rda')
-		load('./regions/gadm0.rda')
+		# load('./regions/gadm0.rda')
 		
 	# retrieve GADM and match to environmental data
 	} else {
@@ -231,26 +230,26 @@ omnibus::say('##################################################################
 				if (class(this) != 'logical') gadm1 <- rbind(gadm1, this)
 			}
 
-		### get world level 0 (countries)
+		# ### get world level 0 (countries)
 			
-			gadm0 <- raster::getData('GADM', country=iso3[1], level=0, path='./temp')
-			for (country in iso3[2:length(iso3)]) {
-				this <- tryCatch(
-					expr={
-						raster::getData('GADM', country=country, level=0, path='./temp')
-					},
-					error={
-						function(x) FALSE
-					}
-				)
-				if (class(this) != 'logical') gadm0 <- rbind(gadm0, this)
-			}
+			# gadm0 <- raster::getData('GADM', country=iso3[1], level=0, path='./temp')
+			# for (country in iso3[2:length(iso3)]) {
+				# this <- tryCatch(
+					# expr={
+						# raster::getData('GADM', country=country, level=0, path='./temp')
+					# },
+					# error={
+						# function(x) FALSE
+					# }
+				# )
+				# if (class(this) != 'logical') gadm0 <- rbind(gadm0, this)
+			# }
 
 		### process GADM
 		
 			gadm2 <- gadm2[ , c('NAME_0', 'NAME_1', 'NAME_2')]
 			gadm1 <- gadm1[ , c('NAME_0', 'NAME_1')]
-			gadm0 <- gadm0[ , c('NAME_0')]
+			# gadm0 <- gadm0[ , c('NAME_0')]
 			
 		### match GADM2 to environmental data
 		
@@ -311,7 +310,7 @@ omnibus::say('##################################################################
 		
 			save(gadm2, file='./regions/gadm2_worldclim.rda')
 			save(gadm1, file='./regions/gadm1.rda')
-			save(gadm0, file='./regions/gadm0.rda')
+			# save(gadm0, file='./regions/gadm0.rda')
 	
 			rm(wc, env, elevation_m, area_km2, envToGadm, gadm2Ea)
 			gc()
@@ -491,7 +490,7 @@ omnibus::say('##################################################################
 	# }
 
 omnibus::say('#######################################')
-omnibus::say('### download species data from BIEN ###')
+omnibus::say('### retrieve species data from BIEN ###')
 omnibus::say('#######################################')
 
 	if (file.exists(paste0('./data/', tolower(family), '_occurrencesGadm.rda'))  & file.exists(paste0('./data/', tolower(family), '_occurrences.rda'))) {

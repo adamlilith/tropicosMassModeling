@@ -181,7 +181,7 @@ mapBayesODM <- function(
 			width <- 0.12
 			height <- 0.3
 			
-			legTitle <- paste('Total\n', genus)
+			legTitle <- paste('Total\n', family)
 
 			legendary::legendGrad('left', inset=-0.01, title=legTitle, col=c('white', col), labels=labels, width=width, height=0.925, border='gray', boxBorder=NA, adjX=c(0, 0.29), adjY=c(0, 0.84), titleAdj=c(0.55, 0.93), labAdj=0.2, boxBg=NA, cex=legCex, lwd=0.5 * lwd, pos=2)
 
