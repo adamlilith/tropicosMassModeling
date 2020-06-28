@@ -33,10 +33,8 @@
 
 	options(stringsAsFactors=FALSE)
 	
-	# these <- 1:100 # done
+	these <- 1:20 # IP
 	# these <- 101:200 # IP
-	# these <- 101:200 # IP
-	these <- 201:300 # IP
 	
 	### settings
 	############
@@ -678,7 +676,7 @@ omnibus::say('#############')
 						### output
 						##########
 						
-							if (saveNotOk | isOk)) {
+							if (saveNotOk | isOk) {
 							
 							outDir <- paste0('./models/', ok, '/', famSpp)
 							omnibus::dirCreate(outDir)
