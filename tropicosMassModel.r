@@ -32,8 +32,8 @@
 	options(stringsAsFactors=FALSE)
 	
 	# these <- 1:80 # DONE!
-	these <- 81:120 # IP
-	# these <- 121:160 # IP
+	# these <- 81:120 # IP
+	these <- 121:160 # IP
 	
 	### settings
 	############
@@ -46,13 +46,13 @@
 
 		### quality assurance settings
 		minUnconverged <- 0.025 # minimum number of coefficients that can be uncoverged (at rhat > <-  1.1) for a model to be used
-		minNumDupsToModel <- 3 # minimum number of duplicate records in a county necessary to generate a model
+		minNumDupsToModel <- 2 # minimum number of duplicate records in a county necessary to generate a model
 		minNumEffortsToModel <- 200 # minimum number of other species records that must be in the study region to model the focal species
 		minPropCountiesWithEffortToModel <- 0.7 # minimum proportion of counties in the study region with any effort necessary to model the species
-		minCountiesPerState <- 10 # minimum number of counties to include state in modeling if it has no detections
+		minEmptyCountiesPerState <- 8 # minimum number of counties to include state in modeling if it has no detections
 		expand <- 0.3 # to define study region create buffer that has a radius of largest distance from centroid to edge of occupied area times this amount
 		minOccCounties <- 5 # minimum number of counties a species must appear in to model
-		minNumRecords <- 20 # minimum number of records (across/within counties) to model
+		minNumRecords <- 50 # minimum number of records (across/within counties) to model
 
 		saveNotOk <- TRUE # if TRUE then save results for models of species with insufficient convergence
 
@@ -562,6 +562,7 @@ omnibus::say('#############')
 	
 	omnibus::dirCreate(paste0('./models/ok'))
 	omnibus::dirCreate(paste0('./models/notOk'))
+	omnibus::dirCreate(paste0('./models/notAssessed'))
 
 	### model each species
 	# for (species in speciesList) {
@@ -610,7 +611,7 @@ omnibus::say('#############')
 						detect = 'detect',
 						expand = expand,
 						upper = 'NAME_1',
-						minLowerPolysPerUpper = minCountiesPerState
+						minLowerPolysPerUpper = minEmptyCountiesPerState
 					)
 					
 					# if there is sufficient effort
@@ -646,14 +647,13 @@ omnibus::say('#############')
 					### model
 					#########
 					
-						mcmcModel <- trainBayesODM_simple(
-							x=focusSp,
+						omnibus::say('Constant p...', level=3)
+						mcmcModel_pConstant_psiCar <- trainBayesODM_pConstant_psiCar(
+							shape=focusSp,
 							effort='effort',
 							detect='detect',
 							stateProv='NAME_1',
 							county='NAME_2',
-							covariate=c('pc1', 'pc2', 'pc3'),
-							qGivenDetect=NULL,
 							niter=niter,
 							nburnin=nburnin,
 							nchains=nchains,
@@ -662,12 +662,50 @@ omnibus::say('#############')
 							verbose=TRUE
 						)
 						
+						omnibus::say('Constant p by state...', level=3)
+						mcmcModel_pStateMean_psiCar <- trainBayesODM_pStateMean_psiCar(
+							shape=focusSp,
+							effort='effort',
+							detect='detect',
+							stateProv='NAME_1',
+							county='NAME_2',
+							niter=niter,
+							nburnin=nburnin,
+							nchains=nchains,
+							thin=thin,
+							na.rm=TRUE,
+							verbose=TRUE
+						)
+						
+						omnibus::say('Variable p by state...', level=3)
+						mcmcModel_pMaxVarByState_psiCar <- trainBayesODM_pMaxVarByState_psiCar(
+							shape=focusSp,
+							effort='effort',
+							detect='detect',
+							stateProv='NAME_1',
+							county='NAME_2',
+							niter=niter,
+							nburnin=nburnin,
+							nchains=nchains,
+							thin=thin,
+							na.rm=TRUE,
+							verbose=TRUE
+						)
+
 					### process model output
 					########################
+
+					modelNames <- c('mcmcModel_pConstant_psiCar', 'mcmcModel_pStateMean_psiCar', 'mcmcModel_pMaxVarByState_psiCar')
+					for (modelName in modelNames) {
 					
-						conv <- rhatStats(mcmcModel$mcmc$samples, rhatThresh=1.1, minConv=minUnconverged)
+						thisModel <- get(modelName)
+					
+						omnibus::say(modelName, level=3)
+					
+						conv <- rhatStats(thisModel$mcmc$samples, rhatThresh=1.1, minConv=minUnconverged)
 						isOk <- conv$sufficient
-						ok <- if (isOk) { 'ok' } else { 'notOk' }
+						# ok <- if (isOk) { 'ok' } else { 'notOk' }
+						ok <- 'notAssessed'
 						
 						print(str(conv))
 						flush.console()
@@ -680,7 +718,7 @@ omnibus::say('#############')
 							outDir <- paste0('./models/', ok, '/', famSpp)
 							omnibus::dirCreate(outDir)
 							
-							# save(mcmcModel, file=paste0(outDir, '/', famSpp, '_mcmcModel.rda'))
+							# save(thisModel, file=paste0(outDir, '/', famSpp, '_mcmcModel.rda'))
 
 							### stats
 							#########
@@ -690,7 +728,7 @@ omnibus::say('#############')
 								detecteds <- focusSp@data$detect
 								efforts <- focusSp@data$effort
 								
-								sink(paste0(paste0(outDir, '/', famSpp, '.txt')))
+								sink(paste0(paste0(outDir, '/', famSpp, '_', modelName, '.txt')))
 								
 									cat(species, '\n')
 									cat(date(), '\n')
@@ -712,7 +750,7 @@ omnibus::say('#############')
 									cat('total samples ', (niter - nburnin) / thin, ' per chain\n\n')
 
 									cat('MODEL OUTPUT\n')
-									if (exists('WAIC', where=mcmcModel$mcmc)) cat('WAIC ', round(mcmcModel$mcmc$WAIC, 3), '\n')
+									if (exists('WAIC', where=thisModel$mcmc)) cat('WAIC ', round(thisModel$mcmc$WAIC, 3), '\n')
 									
 									cat('Proportion of non-converged parameters (rhat > 1.1) ', conv$propUnconv, '\n\n')
 
@@ -735,7 +773,7 @@ omnibus::say('#############')
 								occs2Sp <- focusSp[focusSp@data$detect > 0, ]
 								centsSp <- gCentroid(occs2Sp, byid=TRUE)
 						
-								png(paste0(outDir, '/', famSpp, '_diagnostics.png'), width=1600, height=1200, res=120)
+								png(paste0(outDir, '/', famSpp, '_diagnostics_', modelName, '.png'), width=1600, height=1200, res=120)
 								
 									par(mfrow=c(2, 5), bg='gray90', oma=c(2, 0, 2, 0), mar=c(3, 4, 4, 2), cex.main=1.2)
 
@@ -755,26 +793,26 @@ omnibus::say('#############')
 									plot(focusSp, main='detections', col=cols, border='gray80')
 
 									# detectability
-									thisIndex <- which(grepl(rownames(mcmcModel$mcmc$summary$all.chains), pattern='p[[]'))
-									out <- mcmcModel$mcmc$summary$all.chains[thisIndex, 'Mean']
+									thisIndex <- which(grepl(rownames(thisModel$mcmc$summary$all.chains), pattern='p[[]'))
+									out <- thisModel$mcmc$summary$all.chains[thisIndex, 'Mean']
 									cols <- ifelse(is.na(out), 'gray', scales::alpha('blue', out))
 									plot(focusSp, main='detectability', col=cols, border=NA)
 									points(centsSp, pch=16, cex=0.2)
 									
 									# psi
-									thisIndex <- which(grepl(rownames(mcmcModel$mcmc$summary$all.chains), pattern='psi[[]'))
-									out <- mcmcModel$mcmc$summary$all.chains[thisIndex, 'Mean']
+									thisIndex <- which(grepl(rownames(thisModel$mcmc$summary$all.chains), pattern='psi[[]'))
+									out <- thisModel$mcmc$summary$all.chains[thisIndex, 'Mean']
 									cols <- ifelse(is.na(out), 'gray', scales::alpha('darkgreen', out))
 									plot(focusSp, main='occupancy', col=cols, border=NA)
 									points(centsSp, pch=16, cex=0.2)
 
-									states <- unique(focusSp@data$NAME_1)
-									caterplot(mcmcModel$mcmc$samples, 'p_stateMean', reorder=FALSE, labels=states); title(main='state p')
-									mcmcplots::caterplot(mcmcModel$mcmc$samples, regex='p[[]', reorder=TRUE); title(main='p')
-									mcmcplots::caterplot(mcmcModel$mcmc$samples, regex='psi[[]', reorder=TRUE); title(main='psi')
-									mcmcplots::caterplot(mcmcModel$mcmc$samples, regex='psi_tau'); title(main='psi tau')
-									mcmcplots::caterplot(mcmcModel$mcmc$samples, regex='psi_car[[]', reorder=FALSE); title(main='psi CAR')
-									mcmcplots::caterplot(mcmcModel$mcmc$samples, regex='psi_beta', reorder=FALSE); title(main='psi betas')
+									# states <- unique(focusSp@data$NAME_1)
+									# mcmcplots::caterplot(thisModel$mcmc$samples, 'p_stateMean', reorder=FALSE, labels=states); title(main='state p')
+									mcmcplots::caterplot(thisModel$mcmc$samples, regex='q', reorder=FALSE); title(main='q')
+									mcmcplots::caterplot(thisModel$mcmc$samples, regex='p[[]', reorder=FALSE); title(main='p')
+									mcmcplots::caterplot(thisModel$mcmc$samples, regex='psi[[]', reorder=FALSE); title(main='psi')
+									mcmcplots::caterplot(thisModel$mcmc$samples, regex='psi_tau', reorder=FALSE); title(main='psi tau')
+									mcmcplots::caterplot(thisModel$mcmc$samples, regex='psi_car[[]', reorder=FALSE); title(main='psi CAR')
 
 									if (isOk) {
 										main <- paste0(family, ': ', species)
@@ -794,7 +832,7 @@ omnibus::say('#############')
 
 								say('Shapefile...')
 							
-								out2Sp <- mcmcModel$shape
+								out2Sp <- thisModel$shape
 								out2Sp@data <- out2Sp@data[ , c('NAME_0', 'NAME_1', 'NAME_2', 'effort', 'detect', 'psi', 'psi95CI', 'p', 'p95CI')]
 								names(out2Sp@data) <- c('country', 'state', 'county', 'effort', 'detect', 'psi', 'psi95CI', 'p', 'p95CI')
 
@@ -802,9 +840,9 @@ omnibus::say('#############')
 									
 									dirCreate(outDir, '/shapefiles')
 									
-									raster::shapefile(out2Sp, paste0(outDir, '/shapefiles/', famSpp), overwrite=TRUE)
+									raster::shapefile(out2Sp, paste0(outDir, '/shapefiles/', famSpp, '_', modelName), overwrite=TRUE)
 
-									sink(paste0(outDir, '/shapefiles/', famSpp, '_README.txt'))
+									sink(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '_README.txt'))
 									
 										say(family, ': ', species)
 										say(date(), post=2)
@@ -833,31 +871,38 @@ omnibus::say('#############')
 									toZip <- listFiles(paste0(outDir, '/shapefiles'), pattern=famSpp)
 									a <- zip::zipr(paste0(outDir, '/', famSpp, '.zip'), toZip)
 									
-									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '.dbf'))
-									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '.prj'))
-									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '.shp'))
-									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '.shx'))
-									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_README.txt'))
+									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.dbf'))
+									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.prj'))
+									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.shp'))
+									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.shx'))
+									done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '_README.txt'))
 									unlink(paste0(outDir, '/shapefiles'), recursive=TRUE)
 									
 								} # if sufficient convergence
-									
-						### display plots
-						#################
+										
+							### display plots
+							#################
 
-							say('Maps...')
-						
-							mapBayesODM(
-								species=species,
-								family=family,
-								focus2Sp=out2Sp,
-								gadm1Sp=gadm1,
-								mcmc=mcmcModel$mcmc,
-								minUnconverged=minUnconverged,
-								isOk=isOk,
-								outDir=outDir#,
-								# pos=4
-							)
+								say('Maps...')
+							
+								mapBayesODM(
+									species=species,
+									family=family,
+									focus2Sp=out2Sp,
+									gadm1Sp=gadm1,
+									mcmc=thisModel$mcmc,
+									minUnconverged=minUnconverged,
+									isOk=isOk,
+									outDir=outDir,
+									appendToName=modelName,
+									footer=modelName
+									# pos=4
+								)
+								
+								rm(thisModel)
+								gc()
+								
+							} # next model
 							
 					} # if model is sufficient or saving output from insufficient models
 

@@ -9,6 +9,8 @@
 #' @param minUnconverged Proportion of unconverged parameters that is acceptable for a model
 #' @param outDir Directory to which to save image
 #' @param isOk TRUE/FALSE if model is sufficiently converged. If \code{NULL} the this will be calculated.
+#' @param appendToName \code{NULL} or character to append to file name.
+#' @param footer \code{NULL} or character to append to add to footer.
 #' @param ... Arguments to pass to text()
 #' @return Write an image to disk.
 #' @export
@@ -22,6 +24,8 @@ mapBayesODM <- function(
 	minUnconverged,
 	outDir,
 	isOk = NULL,
+	appendToName = NULL,
+	footer = NULL,
 	...
 ) {
 
@@ -79,12 +83,14 @@ mapBayesODM <- function(
 			isOk <- conv$sufficient
 		}
 
-		ok <- if (isOk) { 'ok' } else { 'notOk'}
+		# ok <- if (isOk) { 'ok' } else { 'notOk'}
+		ok <- 'notAssessed'
 		filename <- paste0(tolower(family), '_', species)
+		if (!is.null(appendToName)) filename <- paste0(filename, '_', appendToName)
 		png(paste0(outDir, '/', filename, '.png'), width=1800, height=1100, res=300)
 		
 			# layout
-			par(bg='white', oma=c(0.7, 0, 1.3, 0), mar=c(0, 2, 0, 0))
+			par(bg='white', oma=c(0.7, 0.5, 1.3, 0), mar=c(0, 2, 0, 0))
 			lay <- matrix(c(1, 1, 2, 1, 1, 3), nrow=2, byrow=TRUE)
 			layout(lay)
 
@@ -147,7 +153,7 @@ mapBayesODM <- function(
 			legTitle <- 'Occupancy\nuncertainty\n(95% CI)'
 
 			swatches <- list(
-				list(swatchAdjY=c(0, 0.04), col=knownOccCol, border='gray', labels='Collections')
+				list(swatchAdjY=c(0, 0.04), col=knownOccCol, border='gray', labels='Specimens')
 			)
 			
 			legendary::legendGrad('left', inset=-0.01, title=legTitle, col=c('white', col), labels=labels, width=width, height=0.925, border='gray', boxBorder=NA, adjX=c(0, 0.29), adjY=c(0.07, 0.81), titleAdj=c(0.55, 0.93), labAdj=0.2, boxBg=NA, cex=legCex, lwd=0.5 * lwd, swatches=swatches, pos=2)
@@ -190,7 +196,9 @@ mapBayesODM <- function(
 			main <- substitute(paste(family, ': ', italic(species)), env=list(species=species, family=family))
 			mtext(text=main, at=c(0.01), outer=TRUE, cex=1, line=-0.3, adj=0)
 			if (!isOk) mtext(text='Insufficient convergence', at=c(0.01), outer=TRUE, cex=1, line=-1.3, adj=0, col='red')
-			mtext(text=date(), side=1, at=0.99, outer=TRUE, cex=0.20, line=-0.3, adj=1)
+			
+			text <- paste(footer, date())
+			mtext(text=text, side=1, at=0.99, outer=TRUE, cex=0.20, line=-0.3, adj=1)
 			
 			if ('q' %in% rownames(mcmc$summary$all.chains)) {
 			
@@ -198,7 +206,7 @@ mapBayesODM <- function(
 				qLow <- round(mcmc$summary$all.chains['q', '95%CI_low'], 3)
 				qHigh <- round(mcmc$summary$all.chains['q', '95%CI_upp'], 3)
 
-				msg <- paste0('Probability of mistaken identification in any county with a single specimen: ', sprintf('%0.3f', q), ' (95% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
+				msg <- paste0('Probability of mistaken identification in any county with a single specimen in which species is truly absent: ', sprintf('%0.3f', q), ' (95% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
 				mtext(msg, side=1, at=0.01, outer=TRUE, cex=0.5, line=-0.3, adj=0)
 			
 			}

@@ -91,7 +91,7 @@ getGeogFocus <- function(
 	# get counties in this area
 	xSpEa$id <- 1:nrow(xSpEa)
 	
-	focalAreaSp <- sp::spTransform(focalAreaSpEa, getCRS('wgs84'))
+	focalAreaSp <- sp::spTransform(focalAreaSpEa, enmSdm::getCRS('wgs84'))
 	focalIndices <- sp::over(focalAreaSpEa, xSpEa, returnList=TRUE)
 	
 	focalIndices <- sp::over(focalAreaSpEa, xSpEa, returnList=TRUE)

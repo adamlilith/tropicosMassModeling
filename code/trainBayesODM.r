@@ -80,51 +80,34 @@ trainBayesODM <- function(
 			
 			# add covariates
 			if (!is.null(covariate)) {
-				for (i in seq_along(covariate)) {
-					predName <- covariate[i]
-					predVals <- as.numeric(scale(x@data[ , predName]))
-					predList <- list(predVals)
-					names(predList) <- paste0('predictor', i)
-					data <- c(data, predList)
-					x@data$DUMMY <- predVals
-					names(x@data)[ncol(x@data)] <- paste0('predictor', i)
-				}
+				predVals <- as.numeric(scale(x@data[ , covariate]))
+				predList <- list(predVals)
+				names(predList) <- 'predictor'
+				data <- c(data, predList)
 			}
 
 			### constants
 			constants <- list(
-				# falseDetect = as.integer((!is.null(qGivenDetect))),
-				yConst = data$y,
-				hasNeighs = as.numeric(hasNeighs),
 				numCounties = nrow(x),
 				numStates = length(unique(x@data[ , stateProv])),
 				state = as.numeric(as.factor(x@data[ , stateProv])),
-				lengthAdjCounties = length(carAdjCounty)
+				lengthAdjCounties = length(carAdjCounty),
+				isOcc = as.numeric(data$y > 0)
 			)
 			
-			if (!is.null(qGivenDetect)) {
-				if (qGivenDetect) {
-					isOcc <- as.numeric(data$y > 0)
-				} else {
-					isOcc <- rep(1, nrow(x))
-				}
-				
-				constants <- c(constants, list(isOcc=isOcc))
-			}
-		
 			### initializations
-			z <- as.numeric(data$y > 0)
-			psi <- runif(constants$numCounties, 0.4, 0.6)
-			p <- runif(constants$numCounties, 0.1, 0.3)
-			
 			inits <- list(
+
+				z = as.numeric(data$y > 0),
 			
-				psi = psi,
-				p = p,
+				q = 0.01,
+			
+				p = runif(constants$numCounties, 0.1, 0.3),
 				logit_p = logit(p),
-				
 				p_stateMean = rnorm(constants$numStates, 0, 0.5),
 				
+				psi = runif(constants$numCounties, 0.4, 0.6),
+
 				psi_island = rnorm(constants$numCounties, 0, 0.1),
 				psi_islandMean = -0.1,
 				
@@ -133,39 +116,19 @@ trainBayesODM <- function(
 				
 			)
 
-			if (!is.null(qGivenDetect)) {
+			if (!is.null(covariate)) {
+
 				inits <- c(
 					inits,
-					list(
-						z = z,
-						q = 0.01
-					)
+					list(psi_beta = 0.1)
 				)
-			}
 			
-			if (!is.null(covariate)) {
-			
-				betas <- list(
-					psi_beta1 = 0.1,
-					psi_beta1pow2 = 0.1,
-					psi_beta2 = 0.1,
-					psi_beta2pow2 = 0.1,
-					psi_beta3 = 0.1,
-					psi_beta3pow2 = 0.1
-				)
-				
-				inits <- c(inits, betas)
-
 			}
 			
 			### monitors
 			monitors <- names(inits)
 			monitors <- monitors[!(monitors %in% c('logit_p'))]
-			if (is.null(qGivenDetect)) {
-				monitors <- monitors[!(monitors %in% c('z'))]
-			} else {
-				monitors2 <- c('q', 'qAll')
-			}
+			monitors <- monitors[!(monitors %in% c('z'))]
 	
 	### model setup
 	###############
@@ -183,17 +146,8 @@ trainBayesODM <- function(
 
 					# detection
 					y[i] ~ dbin(pstar[i], N[i])
-					if (falseDetect == 1) {
-						pstar[i] <- psi[i] * p[i] + (1 - psi[i]) * isOcc[i] * qAll[i] # viable but gives large q if isOcc is {0, 1}
-						qAll[i] <- 1 - (1 - q)^yConst[i]
-					} else {
-						# pstar[i] <- z[i] * p[i] # viable but gives large q if isOcc is {0, 1}
-						# z[i] ~ dbern(psi[i])
-						pstar[i] <- psi[i] * p[i]
-						z[i] ~ dbern(psi[i])
-					}
+					pstar[i] <- psi[i] * p[i] + (1 - psi[i]) * isOcc[i] * (p[i] * q) # viable but gives large q if isOcc is {0, 1}
 					logit(p[i]) ~ dnorm(p_stateMean[state[i]], tau=0.001)
-					
 
 					# occupancy
 					logit(psi[i]) <- hasNeighs[i] * psi_car[i] + (1 - hasNeighs[i]) * psi_island[i]
@@ -202,16 +156,14 @@ trainBayesODM <- function(
 				}
 
 				## priors
-
+				q ~ dbeta(10, 1)
+				
 				# state effects
 				for (j in 1:numStates) {
 					p_stateMean[j] ~ dnorm(0, tau=0.001)
 				}
 				
 				psi_islandMean ~ dnorm(0, tau=0.001)
-				
-				# false detection
-				if (falseDetect == 1) q ~ dbeta(1, 2)
 				
 				# county occupancy CAR
 				psi_tau ~ dgamma(0.001, 0.001)
@@ -229,26 +181,18 @@ trainBayesODM <- function(
 
 					# detection
 					y[i] ~ dbin(pstar[i], N[i])
-					# if (falseDetect == 1) {
-						# pstar[i] <- psi[i] * p[i] + (1 - psi[i]) * isOcc[i] * qAll[i] # viable but gives large q if isOcc is {0, 1}
-						# qAll[i] <- 1 - (1 - q)^yConst[i]
-					# } else {
-						# pstar[i] <- z[i] * p[i] # viable but gives large q if isOcc is {0, 1}
-						# z[i] ~ dbern(psi[i])
-						pstar[i] <- psi[i] * p[i]
-						# z[i] ~ dbern(psi[i])
-					# }
+					pstar[i] <- psi[i] * p[i] + (1 - psi[i]) * isOcc[i] * (p[i] * q) # viable but gives large q if isOcc is {0, 1}
 					logit(p[i]) ~ dnorm(p_stateMean[state[i]], tau=0.001)
-					
 
 					# occupancy
-					logit(psi[i]) <- hasNeighs[i] * psi_car[i] + (1 - hasNeighs[i]) * psi_island[i] + psi_beta1 * predictor1[i] + psi_beta1pow2 * (predictor1[i]^2) + psi_beta2 * predictor2[i] + psi_beta2pow2 * (predictor2[i]^2) + psi_beta3 * predictor3[i] * psi_beta3pow2 * (predictor3[i]^2)
+					logit(psi[i]) <- hasNeighs[i] * psi_car[i] + (1 - hasNeighs[i]) * psi_island[i] + psi_beta * predictor[i]
 					psi_island[i] ~ dnorm(psi_islandMean, tau=0.001)
 				
 				}
 
 				## priors
-
+				q ~ dbeta(10, 1)
+				
 				# state effects
 				for (j in 1:numStates) {
 					p_stateMean[j] ~ dnorm(0, tau=0.001)
@@ -256,16 +200,7 @@ trainBayesODM <- function(
 				
 				psi_islandMean ~ dnorm(0, tau=0.001)
 				
-				# # false detection
-				# if (falseDetect == 1) q ~ dbeta(1, 2)
-				
-				# psi covaraites
-				psi_beta1 ~ dnorm(0, tau=0.001)
-				psi_beta1pow2 ~ dnorm(0, tau=0.001)
-				psi_beta2 ~ dnorm(0, tau=0.001)
-				psi_beta2pow2 ~ dnorm(0, tau=0.001)
-				psi_beta3 ~ dnorm(0, tau=0.001)
-				psi_beta3pow2 ~ dnorm(0, tau=0.001)
+				beta ~ dnorm(0, tau=0.001)
 				
 				# county occupancy CAR
 				psi_tau ~ dgamma(0.001, 0.001)
@@ -288,10 +223,8 @@ trainBayesODM <- function(
 		conf$removeSamplers('psi_tau')
 		conf$addSampler(target='psi_tau', type='slice')
 		
-		if (!is.null(qGivenDetect)) {
-			conf$removeSamplers('q')
-			conf$addSampler(target='q', type='slice')
-		}
+		conf$removeSamplers('q')
+		conf$addSampler(target='q', type='slice')
 
 		if (!is.null(covariate)) {
 			conf$removeSamplers('psi_beta')
@@ -310,18 +243,6 @@ trainBayesODM <- function(
 		
 		}
 
-		if (!is.null(covariate)) {
-			for (i in 1:3) {
-				node <- paste0('psi_beta', i)
-				conf$removeSamplers(node)
-				conf$addSampler(target=node, type='slice')
-
-				node <- paste0('psi_beta', i, 'pow2')
-				conf$removeSamplers(node)
-				conf$addSampler(target=node, type='slice')
-			}
-		}
-				
 		confBuild <- nimble::buildMCMC(conf)
 		flush.console()
 		compiled <- nimble::compileNimble(model, confBuild)
