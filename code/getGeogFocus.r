@@ -65,7 +65,7 @@ getGeogFocus <- function(
 	detect,
 	expand = 0.3,
 	upper = NULL,
-	minLowerPolysPerUpper = 5
+	minLowerPolysPerUpper = 10
 ) {
 
 	mollweide <- '+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs'
@@ -102,8 +102,8 @@ getGeogFocus <- function(
 		uppers <- unique(focusSpEa@data[ , upper])
 		for (thisUpper in uppers) {
 			focusUpper <- focusSpEa[focusSpEa@data[ , upper] == thisUpper, ]
-			if (all(focusUpper@data[ , detect] == 0) && nrow(focusUpper) < minLowerPolysPerUpper) {
-				focusSpEa <- focusSpEa[-which(focusSpEa@data$NAME_1 == thisUpper), ]
+			if (all(focusUpper@data[ , detect] == 0) & nrow(focusUpper) < minLowerPolysPerUpper) {
+				focusSpEa <- focusSpEa[-which(focusSpEa@data[ , upper] == thisUpper), ]
 			}
 		}
 	}

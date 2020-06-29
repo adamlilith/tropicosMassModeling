@@ -84,20 +84,16 @@ trainBayesODM_pStateMean_psiCar <- function(
 		)
 		
 		### initializations
-		# z <- as.numeric(data$y > 0)
-		psi <- runif(constants$numCounties, 0.4, 0.6)
-		p <- runif(constants$numCounties, 0.1, 0.3)
-		
 		inits <- list(
 		
 			z = rep(1, constants$numCounties),
-			psi = psi,
-			p = p,
-			# logit_p = logit(p),
+			psi = runif(constants$numCounties, 0.4, 0.6),
 			
-			q = -0.5,
+			q = 0.01,
+			qConstraint = rep(1, constants$numStates),
 			
-			p_state = rnorm(constants$numStates),
+			p_star = runif(constants$numCounties, 0.1, 0.5),
+			p = runif(constants$numStates, 0.1, 0.3),
 			
 			psi_island = rnorm(constants$numCounties),
 			psi_islandMean = -0.1,
@@ -121,8 +117,8 @@ trainBayesODM_pStateMean_psiCar <- function(
 			for (i in 1:numCounties) {
 
 				# detection
-				y[i] ~ dbin(p[i], N[i])
-				p[i] <- z[i] * p_state[state[i]] + (1 - z[i]) * q
+				y[i] ~ dbin(p_star[i], N[i])
+				p_star[i] <- z[i] * p[state[i]] + (1 - z[i]) * q
 
 				# occupancy
 				z[i] ~ dbern(psi[i])
@@ -136,8 +132,8 @@ trainBayesODM_pStateMean_psiCar <- function(
 			
 			# detection
 			for (j in 1:numStates) {
-				p_state[j] ~ dnorm(0, tau=0.001)
-				qConstraint ~ dconstraint(q < p_state[j])
+				p[j] ~ dbeta(1, 1)
+				qConstraint[j] ~ dconstraint(p[j] > q)
 			}
 			
 			psi_islandMean ~ dnorm(0, tau=0.001)
@@ -168,7 +164,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 
 		for (i in 1:constants$numStates) {
 
-			node <- paste0('p_state[', i, ']')
+			node <- paste0('p[', i, ']')
 			conf$removeSamplers(node)
 			conf$addSampler(target=node, type='slice')
 			
@@ -195,7 +191,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 	### process model output
 	########################
 
-		mcmcModel <- .processBayesODM(shape=shape, mcmc=mcmc, effort=effort, detect=detect, hasNeighs=hasNeighs)
+		mcmcModel <- .processBayesODM(shape=shape, mcmc=mcmc, effort=effort, detect=detect, hasNeighs=hasNeighs, pByState=TRUE, stateProv=stateProv)
 
 		meta <- list(
 			niter=niter,
@@ -210,7 +206,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 			na.rm=na.rm
 		)
 		
-		mcmcModel <- c(mcmcModel, list(code=code), meta=meta)
+		mcmcModel <- c(mcmcModel, list(code=code), meta=list(meta))
 		mcmcModel
 
 }

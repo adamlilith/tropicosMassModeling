@@ -93,8 +93,8 @@ trainBayesODM_pConstant_psiCar <- function(
 			q = 0.01,
 			qConstraint = 1,
 			
-			# p = runif(constants$numCounties, 0.3, 0.5),
-			p_star = 0.7,
+			p = 0.5,
+			p_star = runif(constants$numCounties, 0.1, 0.4),
 			
 			psi_island = rnorm(constants$numCounties),
 			psi_islandMean = -0.1,
@@ -118,8 +118,8 @@ trainBayesODM_pConstant_psiCar <- function(
 			for (i in 1:numCounties) {
 
 				# detection
-				y[i] ~ dbin(p[i], N[i])
-				p[i] <- z[i] * p_star + (1 - z[i]) * q
+				y[i] ~ dbin(p_star[i], N[i])
+				p_star[i] <- z[i] * p + (1 - z[i]) * q
 
 				# occupancy
 				z[i] ~ dbern(psi[i])
@@ -130,10 +130,10 @@ trainBayesODM_pConstant_psiCar <- function(
 
 			### priors
 			q ~ dbeta(1, 10)
-			qConstraint ~ dconstraint(q < p_star)
+			qConstraint ~ dconstraint(q < p)
 			
 			# detection
-			p_star ~ dbeta(1, 1)
+			p ~ dbeta(1, 1)
 			
 			# occupancy
 			psi_islandMean ~ dnorm(0, tau=0.001)
@@ -158,7 +158,7 @@ trainBayesODM_pConstant_psiCar <- function(
 		conf$removeSamplers(node)
 		conf$addSampler(target=node, type='slice')
 
-		node <- 'p_star'
+		node <- 'p'
 		conf$removeSamplers(node)
 		conf$addSampler(target=node, type='slice')
 
@@ -202,7 +202,7 @@ trainBayesODM_pConstant_psiCar <- function(
 			na.rm=na.rm
 		)
 		
-		mcmcModel <- c(mcmcModel, list(code=code), meta=meta)
+		mcmcModel <- c(mcmcModel, list(code=code), meta=list(meta))
 		mcmcModel
 
 }

@@ -6,10 +6,20 @@
 #' @param effort Character, name of field in \code{shape} with effort.
 #' @param detect Character, name of field in \code{shape} with detections.
 #' @param hasNeighs Logical vector, one per row in \code{shape}. Indicates if a polygon in \code{shape} has neighbors or not.
+#' @param pByState Logical, if \code{FALSE} (default), it is assumed there is one value of p (global) or one value of p per county. If \code{TRUE}, then it is assumed that there is one value of p per state/province, and \code{stateProv} must be specified.
+#' @param stateProv Name of field in \code{shape} with state/province names. Ignored if \code{pByState} is \code{FALSE}.
 #' @return List.
 #' @examples
 
-.processBayesODM <- function(shape, mcmc, effort, detect, hasNeighs) {
+.processBayesODM <- function(
+	shape,
+	mcmc,
+	effort,
+	detect,
+	hasNeighs,
+	pByState = FALSE,
+	stateProv = NULL
+) {
 
 	nchains <- length(mcmc$samples)
 	
@@ -73,32 +83,51 @@
 			}
 		}
 		
-		mcmc$summary$all.chains[ , 'Mean'] <- colMeans(samps)
-		mcmc$summary$all.chains[ , 'Median'] <- apply(samps, 2, median)
-		mcmc$summary$all.chains[ , 'St.Dev'] <- apply(samps, 2, sd)
-		mcmc$summary$all.chains[ , '95%CI_low'] <- apply(samps, 2, quantile, probs=0.025)
-		mcmc$summary$all.chains[ , '95%CI_upp'] <- apply(samps, 2, quantile, probs=0.975)
-		mcmc$summary$all.chains[ , 'rhat'] <- wiqid::simpleRhat(mcmc$samples, n.chains=nchains)
+		mcmc$summary$all.chains[ , 'Mean'] <- colMeans(samps, na.rm=TRUE)
+		mcmc$summary$all.chains[ , 'Median'] <- apply(samps, 2, median, na.rm=TRUE)
+		mcmc$summary$all.chains[ , 'St.Dev'] <- apply(samps, 2, sd, na.rm=TRUE)
+		mcmc$summary$all.chains[ , '95%CI_low'] <- apply(samps, 2, quantile, probs=0.025, na.rm=TRUE)
+		mcmc$summary$all.chains[ , '95%CI_upp'] <- apply(samps, 2, quantile, probs=0.975, na.rm=TRUE)
+		# mcmc$summary$all.chains[ , 'rhat'] <- tryCatch(
+			# expr={wiqid::simpleRhat(mcmc$samples, n.chains=nchains)},
+			# error = function(x) NA,
+			# finally={rep(NA, nrow(mcmc$summary$all.chains))}
+		# )
 
 		rm(samps); gc()
 
 	### update shapefile
 	####################
 
-		psi <- mcmc$summary$all.chains[grepl(rownames(mcmc$summary$all.chains), pattern='psi[[]'), 'Mean']
-		p <- mcmc$summary$all.chains[grepl(rownames(mcmc$summary$all.chains), pattern='p[[]'), 'Mean']
+		# psi
+		psiIndex <- which(grepl(rownames(mcmc$summary$all.chains), pattern='psi[[]'))
+		psi <- mcmc$summary$all.chains[psiIndex, 'Mean']
+		psiUncer <- mcmc$summary$all.chains[psiIndex, '95%CI_upp'] - mcmc$summary$all.chains[psiIndex, '95%CI_low']
 		
-		uncer <- mcmc$summary$all.chains[ , '95%CI_upp'] - mcmc$summary$all.chains[ , '95%CI_low']
-		names(uncer) <- rownames(mcmc$summary$all.chains)
-		occUncer <- uncer[grepl(names(uncer), pattern='psi[[]')]
-		pUncer <- uncer[grepl(names(uncer), pattern='p[[]')]
+		# p
+		pIndex <- if (any(grepl(rownames(mcmc$summary$all.chains), pattern='p[[]'))) {
+			which(grepl(rownames(mcmc$summary$all.chains), pattern='p[[]'))
+		} else {
+			which(rownames(mcmc$summary$all.chains) == 'p')
+		}
+		p <- mcmc$summary$all.chains[pIndex, 'Mean']
+		pUncer <- mcmc$summary$all.chains[pIndex, '95%CI_upp'] - mcmc$summary$all.chains[pIndex, '95%CI_low']
+		
+		# assume p values pertain to states, not counties
+		if (pByState) {
+		
+			state <- as.numeric(as.factor(shape@data[ , stateProv]))
+			p <- p[state]
+			pUncer <- pUncer[state]
 
+		}
+		
 		shape@data$psi <- psi
-		shape@data$occUncer <- occUncer
+		shape@data$psiUncer <- psiUncer
 		shape@data$p <- p
 		shape@data$pUncer <- pUncer
 		
-		names(shape@data)[(ncol(shape@data) - 3):ncol(shape@data)] <- c('psi', 'psi95CI', 'p', 'p95CI')
+		names(shape@data)[(ncol(shape@data) - 3):ncol(shape@data)] <- c('psi', 'psi90CI', 'p', 'p90CI')
 		
 	### done
 	########

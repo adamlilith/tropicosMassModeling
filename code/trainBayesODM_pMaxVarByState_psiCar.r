@@ -96,10 +96,11 @@ trainBayesODM_pMaxVarByState_psiCar <- function(
 			# logit_p = logit(p),
 			
 			q = 0.01,
+			qConstraint = rep(1, constants$numStates),
 			
-			p_star = runif(constants$numCounties),
-			p_max = rep(0.3, constants$numStates),
-			p_min_star = rep(0.29, constants$numStates),
+			p_star = rep(0.3, constants$numCounties),
+			p_max = rep(0.35, constants$numStates),
+			p_min_star = rep(0.25, constants$numStates),
 			
 			psi_island = rnorm(constants$numCounties),
 			psi_islandMean = -0.1,
@@ -142,7 +143,7 @@ trainBayesODM_pMaxVarByState_psiCar <- function(
 				p_max[j] ~ dbeta(1, 1)
 				p_min[j] <- p_min_star[j] * p_max[j]
 				p_min_star[j] ~ dbeta(10, 1)
-				qConstraint ~ dconstraint(q < p_min[j])
+				qConstraint[j] ~ dconstraint(p_min[j] > q)
 			}
 			
 			psi_islandMean ~ dnorm(0, tau=0.001)
@@ -217,7 +218,7 @@ trainBayesODM_pMaxVarByState_psiCar <- function(
 			na.rm=na.rm
 		)
 		
-		mcmcModel <- c(mcmcModel, list(code=code), meta=meta)
+		mcmcModel <- c(mcmcModel, list(code=code), meta=list(meta))
 		mcmcModel
 
 }
