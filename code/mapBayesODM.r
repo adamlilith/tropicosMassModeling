@@ -53,27 +53,35 @@ mapBayesODM <- function(
 		occ2Sp <- focus2Sp[focus2Sp@data$detect > 0, ]
 	
 		# centroids of counties with occurrences
-		focus2SpEa <- sp::spTransform(focus2Sp, enmSdm::getCRS('mollweide', TRUE))
+		# focus2SpEa <- sp::spTransform(focus2Sp, enmSdm::getCRS('mollweide', TRUE))
+		focus2SpEa <- sp::spTransform(focus2Sp, enmSdm::getCRS('robinson', TRUE))
 		centsSpEa <- rgeos::gCentroid(focus2SpEa[focus2SpEa@data$detect > 0, ], byid=TRUE)
 		centsSp <- sp::spTransform(centsSpEa, raster::projection(focus2Sp))
+		
+		# fox any potentially orphaned holes
+		focus2SpEa <- rgeos::gBuffer(focus2SpEa, width=0, byid=TRUE)
+		focus2Sp <- sp::spTransform(focus2SpEa, sp::CRS(raster::projection(focus2Sp)))
 		
 		# create plotting extent: focal region plus a buffer
 		extEa <- raster::extent(focus2SpEa)
 		extSpEa <- as(extEa, 'SpatialPolygons')
-		raster::projection(extSpEa) <- enmSdm::getCRS('mollweide')
+		# raster::projection(extSpEa) <- enmSdm::getCRS('mollweide')
+		raster::projection(extSpEa) <- enmSdm::getCRS('robinson')
 		
 		extCentSpEa <- rgeos::gCentroid(extSpEa)
 		maxDist_m <- rgeos::gDistance(extCentSpEa, extSpEa, hausdorff=TRUE)
 		extSpEa <- rgeos::gBuffer(extSpEa, width=0.05 * maxDist_m)
 		
-		extSp <- sp::spTransform(extSpEa, raster::projection(focus2Sp))
+		extSp <- sp::spTransform(extSpEa, sp::CRS(raster::projection(focus2Sp)))
 		ext <- raster::extent(extSp)
 		extSp <- as(ext, 'SpatialPolygons')
 		projection(extSp) <- raster::projection(focus2Sp)
 
-		# gadm1Sp <- gadm1Sp[gadm1Sp@data$NAME_1 %in% unique(focusSp@data$NAME_1), ]
-		gadm1Sp <- sp::spTransform(gadm1Sp, sp::CRS(raster::projection(focusSp)))
-		gadm1SpCrop <- raster::crop(gadm1Sp, extSp)
+		# crop GADM1
+		extSp_inGadm <- sp::spTransform(extSp, sp::CRS(raster::projection(gadm1Sp)))
+		
+		gadm1SpCrop <- raster::crop(gadm1Sp, extSp_inGadm)
+		gadm1SpCrop <- sp::spTransform(gadm1SpCrop, sp::CRS(raster::projection(focusSp)))
 
 	### plot
 	########
@@ -104,6 +112,7 @@ mapBayesODM <- function(
 			if (any(focus2Sp@data$detect == 0)) x[focus2Sp@data$detect > 0] <- NA
 			xMaxNonDetect <- max(x, na.rm=TRUE)
 			cols <- scales::alpha(col, x / xMaxNonDetect)
+			plot(focus2Sp, col='white', border=NA, add=TRUE)
 			plot(focus2Sp, col=cols, border='gray80', lwd=lwd, add=TRUE)
 			plot(occ2Sp, col=knownOccCol, border='gray80', lwd=lwd, add=TRUE)
 			plot(gadm1SpCrop, col=NA, border='gray60', lwd=lwd, add=TRUE)
@@ -132,10 +141,11 @@ mapBayesODM <- function(
 			
 			plot(gadm1SpCrop, col='gray90', border=NA)
 			
-			x <- focus2Sp$psi95CI
+			x <- focus2Sp$psi90CI
 			if (any(focus2Sp@data$detect == 0)) x[focus2Sp@data$detect > 0] <- NA
 			xMaxNonDetect <- max(x, na.rm=TRUE)
 			cols <- scales::alpha(col, x / xMaxNonDetect)
+			plot(focus2Sp, col='white', border=NA, add=TRUE)
 			plot(focus2Sp, col=cols, border='gray80', lwd=lwd, add=TRUE)
 			plot(occ2Sp, col=knownOccCol, border='gray80', lwd=lwd, add=TRUE)
 			plot(gadm1SpCrop, col=NA, border='gray60', lwd=lwd, add=TRUE)
@@ -145,12 +155,12 @@ mapBayesODM <- function(
 			labels <- round(labels, 2)
 			labels <- sprintf('%0.2f', labels)
 			labels[1] <- '0'
-			
+				
 			legCex <- 0.58
 			width <- 0.12
 			height <- 0.3
 			
-			legTitle <- 'Occupancy\nuncertainty\n(95% CI)'
+			legTitle <- 'Occupancy\nuncertainty\n(90% CI)'
 
 			swatches <- list(
 				list(swatchAdjY=c(0, 0.04), col=knownOccCol, border='gray', labels='Specimens')
@@ -170,6 +180,7 @@ mapBayesODM <- function(
 			x <- focus2Sp@data$effort
 			x <- log10(x + 1)
 			cols <- scales::alpha(col, x / max(x))
+			plot(focus2Sp, col='white', border=NA, add=TRUE)
 			plot(focus2Sp, col=cols, border='gray80', lwd=lwd, add=TRUE)
 			plot(gadm1SpCrop, col=NA, border='gray60', lwd=lwd, add=TRUE)
 			points(centsSp, pch=16, cex=0.25)
@@ -197,8 +208,8 @@ mapBayesODM <- function(
 			mtext(text=main, at=c(0.01), outer=TRUE, cex=1, line=-0.3, adj=0)
 			if (!isOk) mtext(text='Insufficient convergence', at=c(0.01), outer=TRUE, cex=1, line=-1.3, adj=0, col='red')
 			
-			text <- paste(footer, date())
-			mtext(text=text, side=1, at=0.99, outer=TRUE, cex=0.20, line=-0.3, adj=1)
+			text <- paste(footer, ' | ', date())
+			mtext(text=text, side=1, at=0.975, outer=TRUE, cex=0.40, line=-0.27, adj=1)
 			
 			if ('q' %in% rownames(mcmc$summary$all.chains)) {
 			
@@ -206,8 +217,8 @@ mapBayesODM <- function(
 				qLow <- round(mcmc$summary$all.chains['q', '95%CI_low'], 3)
 				qHigh <- round(mcmc$summary$all.chains['q', '95%CI_upp'], 3)
 
-				msg <- paste0('Probability of mistaken identification in any county with a single specimen in which species is truly absent: ', sprintf('%0.3f', q), ' (95% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
-				mtext(msg, side=1, at=0.01, outer=TRUE, cex=0.5, line=-0.3, adj=0)
+				msg <- paste0('Probability of mistaken identification in any county with a single specimen in which species is truly absent: ', sprintf('%0.3f', q), ' (90% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
+				mtext(msg, side=1, at=0.01, outer=TRUE, cex=0.38, line=-0.3, adj=0)
 			
 			}
 			

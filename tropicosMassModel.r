@@ -30,10 +30,9 @@
 	print(date())
 
 	options(stringsAsFactors=FALSE)
-	
-	# these <- 1:80 # DONE!
-	# these <- 81:120 # IP
-	these <- 121:160 # IP
+
+	# these <- 29:200 # 1 to 200
+	these <- 279:400 # 201 to 400
 	
 	### settings
 	############
@@ -56,6 +55,10 @@
 
 		saveNotOk <- TRUE # if TRUE then save results for models of species with insufficient convergence
 
+		# states to ignore... Hawaii causes geographic projection problems on some maps
+		# ignoreStates <- 'Hawaii'
+		ignoreStates <- NULL
+		
 	### use-specific generalization
 	###############################
 		
@@ -64,108 +67,24 @@
 	
 	
 	# load/install packages
-	if (!require(BIEN)) {
-		install.packages('BIEN')
-		library(BIEN)
-	}
-	
-	if (!require(coda)) {
-		install.packages('coda')
-		library(coda)
-	}
-	
-	if (!require(data.table)) {
-		install.packages('data.table')
-		library(data.table)
-	}
-	
-	if (!require(mcmcplots)) {
-		install.packages('mcmcplots')
-		library(mcmcplots)
-	}
-	
-	if (!require(nimble)) {
-		install.packages('nimble')
-		library(nimble)
-	}
-	
-	if (!require(spdep)) {
-		install.packages('spdep')
-		library(spdep)
-	}
-	
-	if (!require(wiqid)) {
-		install.packages('wiqid')
-		library(wiqid)
-	}
-	
-	if (!require(stringi)) {
-		install.packages('stringi')
-		library(stringi)
-	}
-	
-	if (!require(sp)) {
-		install.packages('sp')
-		library(sp)
-	}
-	
-	if (!require(tidyverse)) {
-		install.packages('tidyverse')
-		library(tidyverse)
-	}
-	
-	if (!require(terra)) {
-		install.packages('terra')
-		library(terra)
-		# # if loading terra causes an error, use:
+	packs <- c('BIEN', 'cleangeo', 'coda', 'data.table', 'mcmcplots', 'nimble', 'spdep', 'wiqid', 'stringi', 'sp', 'tidyverse', 'raster', 'rgeos', 'scales', 'spocc', 'taxize', 'terra')
+		# # if loading terra causes an error, install from GitHib:
 		# remotes::install_github('rspatial/terra')
-		# library(terra)
+	for (pack in packs) {
+		worked <- do.call(require, list(package=pack))
+		if (!worked) {
+			do.call(install.packages, list(package=pack))
+			do.call(library, list(package=pack))
+		}
 	}
 	
-	
-	if (!require(raster)) {
-		install.packages('raster')
-		library(raster)
-	}
-	
-	if (!require(rgeos)) {
-		install.packages('rgeos')
-		library(rgeos)
-	}
-	
-	if (!require(scales)) {
-		install.packages('scales')
-		library(scales)
-	}
-	
-	if (!require(spocc)) {
-		install.packages('spocc')
-		library(spocc)
-	}
-	
-	if (!require(taxize)) {
-		install.packages('taxize')
-		library(taxize)
-	}
-	
-	if (!require(omnibus)) {
-		remotes::install_github('adamlilith/omnibus')
-		library(omnibus)
-	}
-	
-	if (!require(legendary)) {
-		remotes::install_github('adamlilith/legendary')
-		library(legendary)
-	}
-	
-	if (!require(enmSdm)) {
-		remotes::install_github('adamlilith/enmSdm')
-		library(enmSdm)
-	}
-
-	if (!require(birdsEye)) {
-		remotes::install_github('adamlilith/birdsEye')
-		library(birdsEye)
+	packs <- c('omnibus', 'enmSdm', 'legendary', 'statisfactory', 'birdsEye')
+	for (pack in packs) {
+		worked <- do.call(require, list(package=pack))
+		if (!worked) {
+			do.call(remotes::install_github, list(package=paste0('adamlilith/', pack)))
+			do.call(library, list(package=pack))
+		}
 	}
 
 	# get functions not part of package yet
@@ -187,11 +106,17 @@ omnibus::say('##################################################################
 	# This section needs only done once. Results are saved to "regions" folder.
 
 	# load world shapefiles
-	if (file.exists('./regions/gadm2_worldclim.rda')) {
+	if (file.exists('./regions/gadm2.rda')) {
 	
-		load('./regions/gadm2_worldclim.rda')
+		load('./regions/gadm2.rda')
 		load('./regions/gadm1.rda')
 		# load('./regions/gadm0.rda')
+		
+		# gadm2 <- gadm2[gadm2@data$NAME_1 != 'Hawaii', ]
+		# gadm2 <- gadm2[gadm2@data$NAME_1 != 'Alaska', ]
+		
+		# gadm1 <- gadm1[gadm2@data$NAME_1 != 'Hawaii', ]
+		# gadm1 <- gadm1[gadm2@data$NAME_1 != 'Alaska', ]
 		
 	# retrieve GADM and match to environmental data
 	} else {
@@ -250,54 +175,71 @@ omnibus::say('##################################################################
 			gadm2 <- gadm2[ , c('NAME_0', 'NAME_1', 'NAME_2')]
 			gadm1 <- gadm1[ , c('NAME_0', 'NAME_1')]
 			# gadm0 <- gadm0[ , c('NAME_0')]
-			
-		### match GADM2 to environmental data
+
+		### fix broken geometries
 		
-			# retrieve environmental data
-			dir.create('./temp', showWarnings=FALSE)
-			wc <- raster::getData('worldclim', var='bio', res=10, path='./temp')
-			elevation_m <- raster::getData('worldclim', var='alt', res=10, path='./temp')
-			names(elevation_m) <- 'elev_m'
+			report <- cleangeo::clgeo_CollectionReport(gadm2)
+			if (any(!report$valid)) gadm1 <- cleangeo::clgeo_Clean(gadm1)
+		
+			report <- cleangeo::clgeo_CollectionReport(gadm2)
+			if (any(!report$valid)) gadm2 <- cleangeo::clgeo_Clean(gadm2)
 			
-			env <- raster::stack(elevation_m, wc)
+			# gadm2SpEa <- sp::spTransform(gadm2, enmSdm::getCRS('robinson', TRUE))
+			# gadm1SpEa <- sp::spTransform(gadm1, enmSdm::getCRS('robinson', TRUE))
 			
-			# fill NA cells near coasts to account for fact that some records may not fall in a cell near a coast
-			name <- names(env)
-			for (i in 1:nlayers(env)) {
-				env[[i]] <- focal(env[[i]], w=matrix(1, nrow=3, ncol=3), fun=mean, na.rm=TRUE, NAonly=TRUE)
-			}
-			names(env) <- name
+			# gadm2SpEa <- rgeos::gBuffer(gadm2SpEa, width=0, byid=TRUE)
+			# gadm1SpEa <- rgeos::gBuffer(gadm1SpEa, width=0, byid=TRUE)
 			
-			# extract to shape
-			envToGadm <- terra::extract(env, gadm2, weight=TRUE, normalizeWeights=TRUE)
+			# gadm2 <- sp::spTransform(gadm2, enmSdm::getCRS('wgs84', TRUE))
+			# gadm1 <- sp::spTransform(gadm1, enmSdm::getCRS('wgs84', TRUE))
+			
+		# ### match GADM2 to environmental data
+		
+			# # retrieve environmental data
+			# omnibus::dirCreate('./temp')
+			# wc <- raster::getData('worldclim', var='bio', res=10, path='./temp')
+			# elevation_m <- raster::getData('worldclim', var='alt', res=10, path='./temp')
+			# names(elevation_m) <- 'elev_m'
+			
+			# env <- raster::stack(elevation_m, wc)
+			
+			# # fill NA cells near coasts to account for fact that some records may not fall in a cell near a coast
+			# name <- names(env)
+			# for (i in 1:nlayers(env)) {
+				# env[[i]] <- focal(env[[i]], w=matrix(1, nrow=3, ncol=3), fun=mean, na.rm=TRUE, NAonly=TRUE)
+			# }
+			# names(env) <- name
+			
+			# # extract to shape
+			# envToGadm <- terra::extract(env, gadm2, weight=TRUE, normalizeWeights=TRUE)
 
-			# match to shape taking area-weighted mean value
-			gadm2@data$elevation_m <- NA
-			for (i in seq_along(envToGadm)) {
-				x <- envToGadm[[i]][ , 'elev_m']
-				wgt <- envToGadm[[i]][ , 'weight']
-				gadm2@data$elevation_m[i] <- sum(x * wgt, na.rm=TRUE)
-			}
+			# # match to shape taking area-weighted mean value
+			# gadm2@data$elevation_m <- NA
+			# for (i in seq_along(envToGadm)) {
+				# x <- envToGadm[[i]][ , 'elev_m']
+				# wgt <- envToGadm[[i]][ , 'weight']
+				# gadm2@data$elevation_m[i] <- sum(x * wgt, na.rm=TRUE)
+			# }
 
-			for (bio in 1:19) {
+			# for (bio in 1:19) {
 
-				thisBio <- paste0('bio', bio)
-				gadm2@data$DUMMY <- NA
-				colnames(gadm2@data)[ncol(gadm2@data)] <- thisBio
-				for (i in seq_along(envToGadm)) {
-					x <- envToGadm[[i]][ , thisBio]
-					wgt <- envToGadm[[i]][ , 'weight']
-					gadm2@data[i, thisBio] <- sum(x * wgt, na.rm=TRUE)
-				}
+				# thisBio <- paste0('bio', bio)
+				# gadm2@data$DUMMY <- NA
+				# colnames(gadm2@data)[ncol(gadm2@data)] <- thisBio
+				# for (i in seq_along(envToGadm)) {
+					# x <- envToGadm[[i]][ , thisBio]
+					# wgt <- envToGadm[[i]][ , 'weight']
+					# gadm2@data[i, thisBio] <- sum(x * wgt, na.rm=TRUE)
+				# }
 				
-			}
+			# }
 	
 		### calculate area of states and counties
 		
-			gadm2Ea <- sp::spTransform(gadm2, enmSdm::getCRS('mollweide', TRUE))
+			gadm2Ea <- sp::spTransform(gadm2, enmSdm::getCRS('robinson', TRUE))
 			gadm2@data$areaKm2 <- rgeos::gArea(gadm2Ea, byid=TRUE) / 1000^2
 		
-			gadm1Ea <- sp::spTransform(gadm1, enmSdm::getCRS('mollweide', TRUE))
+			gadm1Ea <- sp::spTransform(gadm1, enmSdm::getCRS('robinson', TRUE))
 			gadm1@data$areaKm2 <- rgeos::gArea(gadm1Ea, byid=TRUE) / 1000^2
 		
 		### clean up
@@ -308,7 +250,7 @@ omnibus::say('##################################################################
 
 		### save
 		
-			save(gadm2, file='./regions/gadm2_worldclim.rda')
+			save(gadm2, file='./regions/gadm2.rda')
 			save(gadm1, file='./regions/gadm1.rda')
 			# save(gadm0, file='./regions/gadm0.rda')
 	
@@ -551,6 +493,13 @@ omnibus::say('#############')
 omnibus::say('### model ###')
 omnibus::say('#############')
 
+	# remove states that cause problems
+	if (!is.null(ignoreStates)) {
+		for (ign in ignoreStates) {
+			occsGadm2 <- occsGadm2[occsGadm2@data$NAME_1 != ign, ]
+		}
+	}
+
 	# list of species
 	speciesList <- sort(unique(occs$scrubbed_species_binomial))
 	if (any(speciesList == '')) speciesList <- speciesList[-which(speciesList == '')]
@@ -636,13 +585,13 @@ omnibus::say('#############')
 							
 							focusSp <- sp::spTransform(focusSp, sp::CRS(eaProj)) # OPTIONAL!
 						
-					### PCA
-					#######
+					# ### PCA
+					# #######
 					
-						pca <- prcomp(focusSp@data[ , c(paste0('bio', 1:19), 'elevation_m')], center=TRUE, scale=TRUE)
-						focusSp@data$pc1 <- pca$x[ , 1]
-						focusSp@data$pc2 <- pca$x[ , 2]
-						focusSp@data$pc3 <- pca$x[ , 3]
+						# pca <- prcomp(focusSp@data[ , c(paste0('bio', 1:19), 'elevation_m')], center=TRUE, scale=TRUE)
+						# focusSp@data$pc1 <- pca$x[ , 1]
+						# focusSp@data$pc2 <- pca$x[ , 2]
+						# focusSp@data$pc3 <- pca$x[ , 3]
 						
 					### model
 					#########
@@ -692,6 +641,10 @@ omnibus::say('#############')
 							verbose=TRUE
 						)
 
+						# save(mcmcModel_pConstant_psiCar, file=paste0(outDir, '/', famSpp, '_mcmcModel_pConstant_psiCar.rda'))
+						# save(mcmcModel_pStateMean_psiCar, file=paste0(outDir, '/', famSpp, '_mcmcModel_pStateMean_psiCar.rda'))
+						# save(mcmcModel_pMaxVarByState_psiCar, file=paste0(outDir, '/', famSpp, '_mcmcModel_pMaxVarByState_psiCar.rda'))
+						
 					### process model output
 					########################
 
@@ -700,7 +653,7 @@ omnibus::say('#############')
 					
 						thisModel <- get(modelName)
 					
-						omnibus::say(modelName, level=3)
+						omnibus::say(modelName, level=3, pre=1)
 					
 						conv <- rhatStats(thisModel$mcmc$samples, rhatThresh=1.1, minConv=minUnconverged)
 						isOk <- conv$sufficient
@@ -714,14 +667,12 @@ omnibus::say('#############')
 						##########
 						
 							if (saveNotOk | isOk) {
-							
-							outDir <- paste0('./models/', ok, '/', famSpp)
-							omnibus::dirCreate(outDir)
-							
-							# save(thisModel, file=paste0(outDir, '/', famSpp, '_mcmcModel.rda'))
-
-							### stats
-							#########
+								
+								outDir <- paste0('./models/', ok, '/', famSpp)
+								omnibus::dirCreate(outDir)
+								
+								### stats
+								#########
 				
 								say('Statistics...')
 							
@@ -809,7 +760,11 @@ omnibus::say('#############')
 									# states <- unique(focusSp@data$NAME_1)
 									# mcmcplots::caterplot(thisModel$mcmc$samples, 'p_stateMean', reorder=FALSE, labels=states); title(main='state p')
 									mcmcplots::caterplot(thisModel$mcmc$samples, regex='q', reorder=FALSE); title(main='q')
-									mcmcplots::caterplot(thisModel$mcmc$samples, regex='p[[]', reorder=FALSE); title(main='p')
+									if (modelName == 'mcmcModel_pConstant_psiCar') {
+										mcmcplots::caterplot(thisModel$mcmc$samples, parms='p', reorder=FALSE); title(main='p')
+									} else {
+										mcmcplots::caterplot(thisModel$mcmc$samples, regex='p[[]', reorder=FALSE); title(main='p')
+									}
 									mcmcplots::caterplot(thisModel$mcmc$samples, regex='psi[[]', reorder=FALSE); title(main='psi')
 									mcmcplots::caterplot(thisModel$mcmc$samples, regex='psi_tau', reorder=FALSE); title(main='psi tau')
 									mcmcplots::caterplot(thisModel$mcmc$samples, regex='psi_car[[]', reorder=FALSE); title(main='psi CAR')
@@ -822,19 +777,21 @@ omnibus::say('#############')
 										col <- 'red'
 									}
 									
+									main <- paste0(main, '\n', modelName)
+									
 									title(main=main, cex.main=1.8, outer=TRUE, col=col)
 									title(sub=date(), cex.sub=0.7, outer=TRUE, line=-0.3)
 									
 								dev.off()
 
-							### save shapefile
-							##################
+								### save shapefile
+								##################
 
 								say('Shapefile...')
 							
 								out2Sp <- thisModel$shape
-								out2Sp@data <- out2Sp@data[ , c('NAME_0', 'NAME_1', 'NAME_2', 'effort', 'detect', 'psi', 'psi95CI', 'p', 'p95CI')]
-								names(out2Sp@data) <- c('country', 'state', 'county', 'effort', 'detect', 'psi', 'psi95CI', 'p', 'p95CI')
+								out2Sp@data <- out2Sp@data[ , c('NAME_0', 'NAME_1', 'NAME_2', 'effort', 'detect', 'psi', 'psi90CI', 'p', 'p90CI')]
+								names(out2Sp@data) <- c('country', 'state', 'county', 'effort', 'detect', 'psi', 'psi90CI', 'p', 'p90CI')
 
 								if (isOk) {
 									
@@ -880,8 +837,8 @@ omnibus::say('#############')
 									
 								} # if sufficient convergence
 										
-							### display plots
-							#################
+								### display plots
+								#################
 
 								say('Maps...')
 							
@@ -902,9 +859,9 @@ omnibus::say('#############')
 								rm(thisModel)
 								gc()
 								
-							} # next model
+							} # if model is sufficient or saving output from insufficient models
 							
-					} # if model is sufficient or saving output from insufficient models
+					} # next model
 
 					### clean up
 					
