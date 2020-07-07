@@ -209,7 +209,7 @@ mapBayesODM <- function(
 			if (!isOk) mtext(text='Insufficient convergence', at=c(0.01), outer=TRUE, cex=1, line=-1.3, adj=0, col='red')
 			
 			text <- paste(footer, ' | ', date())
-			mtext(text=text, side=1, at=0.975, outer=TRUE, cex=0.40, line=-0.27, adj=1)
+			mtext(text=text, side=1, at=0.975, outer=TRUE, cex=0.35, line=-0.27, adj=1)
 			
 			if ('q' %in% rownames(mcmc$summary$all.chains)) {
 			
@@ -218,7 +218,7 @@ mapBayesODM <- function(
 				qHigh <- round(mcmc$summary$all.chains['q', '95%CI_upp'], 3)
 
 				msg <- paste0('Probability of mistaken identification in any county with a single specimen in which species is truly absent: ', sprintf('%0.3f', q), ' (90% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
-				mtext(msg, side=1, at=0.01, outer=TRUE, cex=0.38, line=-0.3, adj=0)
+				mtext(msg, side=1, at=0.01, outer=TRUE, cex=0.35, line=-0.3, adj=0)
 			
 			}
 			

@@ -5,7 +5,8 @@
 #' @param mcmc Object of class \code{mcmc.list}.
 #' @param effort Character, name of field in \code{shape} with effort.
 #' @param detect Character, name of field in \code{shape} with detections.
-#' @param hasNeighs Logical vector, one per row in \code{shape}. Indicates if a polygon in \code{shape} has neighbors or not.
+#' @param neighIndex Index of units with neighbors (from the spatial object). Set as \code{NULL} if there are none.
+#' @param islandndex Index of units that are islands (from the spatial object). Set as \code{NULL} if there are none.
 #' @param pByState Logical, if \code{FALSE} (default), it is assumed there is one value of p (global) or one value of p per county. If \code{TRUE}, then it is assumed that there is one value of p per state/province, and \code{stateProv} must be specified.
 #' @param stateProv Name of field in \code{shape} with state/province names. Ignored if \code{pByState} is \code{FALSE}.
 #' @return List.
@@ -16,65 +17,21 @@
 	mcmc,
 	effort,
 	detect,
-	hasNeighs,
+	neighIndex = NULL,
+	islandIndex = NULL,
 	pByState = FALSE,
 	stateProv = NULL
 ) {
 
-	nchains <- length(mcmc$samples)
+	nchains <- coda::nchain(mcmc)
+	mcmc <- list(samples=mcmc)
 	
-	### remove unneeded stuff
-	#########################
-
-		# remove unneeded
-		ignores <- c('logit_p[[]', 'z[[]', 'qConstraint')
-		for (ignore in ignores) {
-			bads <- grepl(colnames(mcmc$samples$chain1), pattern=ignore)
-			if (any(bads)) {
-				for (chain in 1:nchains) {
-					mcmc$samples[[chain]] <- mcmc$samples[[chain]][ , !bads]
-				}
-			}	
-		}
-		
-		# remove island coefficients for non-islands and CAR coefficients for islands
-		if (any(!hasNeighs)) {
-		
-			# psi_car for islands
-			index <- which(!hasNeighs)
-			bads <- paste0('psi_car[', index, ']')
-			for (chain in 1:nchains) {
-				remove <- which(colnames(mcmc$samples[[chain]]) %in% bads)
-				mcmc$samples[[chain]] <- mcmc$samples[[chain]][ , -remove]
-			}
-		
-			# psi_island for non-islands
-			index <- which(hasNeighs)
-			bads <- paste0('psi_island[', index, ']')
-			for (chain in 1:nchains) {
-				remove <- which(colnames(mcmc$samples[[chain]]) %in% bads)
-				mcmc$samples[[chain]] <- mcmc$samples[[chain]][ , -remove]
-			}
-			
-		# no islands
-		} else {
-		
-			# remove psi_island and psi_islandMean for all
-			index <- which(hasNeighs)
-			bads <- c(paste0('psi_island[', index, ']'), 'psi_islandMean')
-			for (chain in 1:nchains) {
-				remove <- which(colnames(mcmc$samples[[chain]]) %in% bads)
-				mcmc$samples[[chain]] <- mcmc$samples[[chain]][ , -remove]
-			}
-		
-		}
-
 	### calculate summary
 	#####################
 	
-		mcmc$summary$all.chains <- matrix(NA, nrow=ncol(mcmc$samples[[1]]), ncol=6)
+		mcmc$summary$all.chains <- matrix(NA, nrow=ncol(mcmc$samples[[1]]), ncol=5)
 		rownames(mcmc$summary$all.chains) <- colnames(mcmc$samples[[1]])
-		colnames(mcmc$summary$all.chains) <- c('Mean', 'Median', 'St.Dev', '95%CI_low', '95%CI_upp', 'rhat')
+		colnames(mcmc$summary$all.chains) <- c('Mean', 'Median', 'St.Dev', '95%CI_low', '95%CI_upp')
 		
 		samps <- mcmc$samples[[1]]
 		if (nchains > 1) {
@@ -88,11 +45,6 @@
 		mcmc$summary$all.chains[ , 'St.Dev'] <- apply(samps, 2, sd, na.rm=TRUE)
 		mcmc$summary$all.chains[ , '95%CI_low'] <- apply(samps, 2, quantile, probs=0.025, na.rm=TRUE)
 		mcmc$summary$all.chains[ , '95%CI_upp'] <- apply(samps, 2, quantile, probs=0.975, na.rm=TRUE)
-		# mcmc$summary$all.chains[ , 'rhat'] <- tryCatch(
-			# expr={wiqid::simpleRhat(mcmc$samples, n.chains=nchains)},
-			# error = function(x) NA,
-			# finally={rep(NA, nrow(mcmc$summary$all.chains))}
-		# )
 
 		rm(samps); gc()
 
@@ -100,10 +52,22 @@
 	####################
 
 		# psi
-		psiIndex <- which(grepl(rownames(mcmc$summary$all.chains), pattern='psi[[]'))
-		psi <- mcmc$summary$all.chains[psiIndex, 'Mean']
-		psiUncer <- mcmc$summary$all.chains[psiIndex, '95%CI_upp'] - mcmc$summary$all.chains[psiIndex, '95%CI_low']
+		if (!is.null(neighIndex[1])) {
 		
+			psiNeighIndex <- which(grepl(rownames(mcmc$summary$all.chains), pattern='psi_neigh[[]'))
+			psiNeigh <- mcmc$summary$all.chains[psiNeighIndex, 'Mean']
+			psiUncerNeigh <- mcmc$summary$all.chains[psiNeighIndex, '95%CI_upp'] - mcmc$summary$all.chains[psiNeighIndex, '95%CI_low']
+		
+		}
+		
+		if (!is.null(islandIndex[1])) {
+			
+			psiIslandIndex <- which(grepl(rownames(mcmc$summary$all.chains), pattern='psi_island[[]'))
+			psiIsland <- mcmc$summary$all.chains[psiIslandIndex, 'Mean']
+			psiUncerIsland <- mcmc$summary$all.chains[psiIslandIndex, '95%CI_upp'] - mcmc$summary$all.chains[psiIslandIndex, '95%CI_low']
+		
+		}
+			
 		# p
 		pIndex <- if (any(grepl(rownames(mcmc$summary$all.chains), pattern='p[[]'))) {
 			which(grepl(rownames(mcmc$summary$all.chains), pattern='p[[]'))
@@ -113,7 +77,7 @@
 		p <- mcmc$summary$all.chains[pIndex, 'Mean']
 		pUncer <- mcmc$summary$all.chains[pIndex, '95%CI_upp'] - mcmc$summary$all.chains[pIndex, '95%CI_low']
 		
-		# assume p values pertain to states, not counties
+		# if p values pertain to states, not counties
 		if (pByState) {
 		
 			state <- as.numeric(as.factor(shape@data[ , stateProv]))
@@ -122,8 +86,20 @@
 
 		}
 		
-		shape@data$psi <- psi
-		shape@data$psiUncer <- psiUncer
+		# assign
+		shape@data$pUncer <- shape@data$p <- shape@data$psiUncer <- shape@data$psi <- NA
+		
+		shape@data$psiUncer <- shape@data$psi <- NA
+		if (!is.null(neighIndex[1])) {
+			shape@data$psi[neighIndex] <- psiNeigh
+			shape@data$psiUncer[neighIndex] <- psiUncerNeigh
+		}
+		
+		if (!is.null(islandIndex[1])) {
+			shape@data$psi[islandIndex] <- psiIsland
+			shape@data$psiUncer[islandIndex] <- psiUncerIsland
+		}
+		
 		shape@data$p <- p
 		shape@data$pUncer <- pUncer
 		
