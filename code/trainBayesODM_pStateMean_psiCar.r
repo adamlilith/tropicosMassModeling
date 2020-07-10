@@ -16,6 +16,7 @@
 #' @param nchains Positive integer, number of MCMC chains (default is 4).
 #' @param thin Positive integer, number of MCMC samples by which to thin the results (default is 1; i.e., no thinning). To reduce memory requirements, you can use \code{thin} while increasing \code{niter} and/or \code{nburnin}.
 #' @param raf Logical, if \code{TRUE} (default), dynamically change the value for niter using the Raftery-Lewis method for assessing number of iterations needed for convergence. The number used will the the number suggested rounded up to the nearest 1000. The total number of iterations (including burn-in) will be this number plus \code{nburnin}.
+#' @param minIter Minimum number of iterations to require (not including burn-in).
 #' @param maxIter Maximum number of iterations to allow in output. The final number of recommended iterations will be \code{min(maxIter, rl)} where \code{rl} is the number recommend by the RL method, rounded up to the nearest 1000. If \code{rl} is > \code{maxIter} a warning will be issued.
 #' @param nsamples Number of samples desired (after burn-in and thinning). Only used if \code{raf} is \code{TRUE}. Used to reset the value of \code{thin} after estimating the number of iterations using the Raftery-Lewis method.
 #' @param na.rm Logical, if \code{TRUE} (default), then remove rows in \code{shape} that have \code{NA} in any input field. If this is \code{FALSE} and \code{NA}s occur in any fields then an error may occur.
@@ -42,7 +43,9 @@ trainBayesODM_pStateMean_psiCar <- function(
 	nchains = 4,
 	thin = 1,
 	raf = TRUE,
+	minIter = 2000,
 	maxIter = 11000,
+	nsamples = 1000,
 	na.rm = TRUE,
 	verbose = TRUE,
 	...
@@ -165,7 +168,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 					psi_island = psi_island,
 					logit_psi_island = logit(psi_island),
 					psi_islandMean = 0,
-					psi_islandSd = 1
+					psi_islandTau = 1
 				)
 			)
 			
@@ -173,56 +176,19 @@ trainBayesODM_pStateMean_psiCar <- function(
 		
 		### monitors
 		monitors <- names(inits)
-		# monitors <- monitors[!(monitors %in% c('z_neigh'))]
-		# monitors <- monitors[!(monitors %in% c('z_island'))]
+		# monitors <- monitors[!(monitors %in% c('z_neigh', 'z_neigh'))]
 		monitors <- monitors[!(monitors %in% c('logit_psi_island'))]
 
 	### model setup
 	###############
 	
-		code <- nimble::nimbleCode({
-			
-			### likelihood
-			for (g in 1:numNeighs) {
-
-				# detection
-				y_neigh[g] ~ dbin(p_star_neigh[g], N_neigh[g])
-				p_star_neigh[g] <- z_neigh[g] * p[state_neigh[g]] + (1 - z_neigh[g]) * q
-				
-				# occupancy
-				z_neigh[g] ~ dbern(psi_neigh[g])
-				logit(psi_neigh[g]) <- psi_car[g]
-			}
-			
-			for (h in 1:numIslands) {
-
-				# detection
-				y_island[h] ~ dbin(p_star_island[h], N_island[h])
-				p_star_island[h] <- z_island[h] * p[state_island[h]] + (1 - z_island[h]) * q
-				
-				# occupancy
-				z_island[h] ~ dbern(psi_island[h])
-				logit(psi_island[h]) ~ dnorm(psi_islandMean, sd=psi_islandSd)
-
-			}
-
-			### priors
-			q ~ dbeta(1, 2)
-			
-			# detection
-			for (i in 1:numStates) {
-				p[i] ~ dbeta(1, 1)
-				qConstraint[i] ~ dconstraint(p[i] > q)
-			}
-			
-			psi_islandMean ~ dnorm(0, tau=0.001)
-			psi_islandSd ~ dgamma(0.001, 0.001)
-			
-			# county occupancy CAR
-			psi_tau ~ dgamma(0.001, 0.001)
-			psi_car[1:numNeighs] ~ dcar_normal(adj=carAdjCounty[1:lengthAdjCounties], weights=carWeightCounty[1:lengthAdjCounties], num=carNumCounty[1:numNeighs], tau=psi_tau, c=3, zero_mean=0)
-			
-		})
+		code <- if (hasNeighs & hasIslands) {
+			.trainBayesODM_pStateMean_psiCar_neighsIslands
+		} else if (hasNeighs & !hasIslands) {
+			.trainBayesODM_pStateMean_psiCar_neighsOnly
+		} else if (!hasNeighs & hasIslands) {
+			.trainBayesODM_pStateMean_psiCar_islandsOnly
+		}
 		
 		### construct and compile model
 		###############################
@@ -244,7 +210,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 			}
 			
 			if (hasIslands) {
-				node <- 'psi_islandSd'
+				node <- 'psi_islandTau'
 				conf$removeSamplers(node)
 				conf$addSampler(target=node, type='slice')
 
@@ -285,6 +251,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 				nburnin = nburnin,
 				nsamples = nsamples,
 				thin = thin,
+				minIter = minIter,
 				maxIter = maxIter,
 				retry = TRUE,
 				exact = exact,
@@ -293,6 +260,12 @@ trainBayesODM_pStateMean_psiCar <- function(
 				verbose = verbose
 			)
 
+			rand <- round(1E6 * runif(1))
+			save(rl, file=paste0('E:/ecology/!Scratch/temp', rand, '.rda'))
+			rm(rl)
+			gc()
+			load(paste0('E:/ecology/!Scratch/temp', rand, '.rda'))
+			
 		}
 		
 		if (rl$sufficient) {
@@ -300,33 +273,28 @@ trainBayesODM_pStateMean_psiCar <- function(
 			niter <- rl$recIter
 			thin <- rl$recThin
 			
+			if (coda::niter(rl$mcmc) < nsamples) {
+				if (verbose) omnibus::say('Adding iterations to Raftery-Lewis MCMC chain...')
+				add <- (niter - burnin - coda::niter(rl$mcmc)) * thin
+				rl$mcmc <- addToMcmc(comp = comp, mcmc = rl$mcmc, inits = inits, add = add, thin = thin)
+			}
+			
 		}
 			
 	### MCMC
 	########
 		
-		if (coda::niter(rl$mcmc) < nsamples) {
-			add <- nsamples - coda::niter(rl$mcmc)
-			rl$mcmc <- addToMcmc(comp = comp, mcmc = rl$mcmc, inits = inits, add = add, thin = thin)
-		}
-		
-		if (nchains > 1) {
+		if (nchains > 1 | !raf) {
 
+			startChain <- if (raf) { 2 } else { 1 }
+			thisNumChains <- if (raf) { nchains - 1 } else { nchains }
+		
 			# note: thinning afterward
-			mcmc <- runMCMC(compiled$confBuild, niter = niter, nburnin = nburnin, thin = 1, nchains = nchains - 1, inits = inits, progressBar = verbose, samplesAsCodaMCMC = TRUE, summary = FALSE, WAIC = FALSE)
+			mcmc <- runMCMC(compiled$confBuild, niter = niter, nburnin = nburnin, thin = thin, nchains = thisNumChains, inits = inits, progressBar = verbose, samplesAsCodaMCMC = TRUE, summary = FALSE, WAIC = FALSE)
 			flush.console()
 			
 			mcmc <- .removeVariablesFromMcmc(mcmc, exact=exact, pattern=pattern)
-			
-			# thin
-			if (thin > 1) {
-				keeps <- seq(1, niter - nburnin, by=thin)
-				for (chain in 1:coda::nchain(mcmc)) {
-					mcmc[[chain]] <- mcmc[[chain]][keeps, ]
-					mcmc[[chain]] <- as.mcmc(mcmc[[chain]])
-				}
-			}
-			
+							
 		}
 		
 		# combine all chains
@@ -379,7 +347,7 @@ trainBayesODM_pStateMean_psiCar <- function(
 				p_star_neigh <- z_neigh * p[constants$state_neigh] + (1 - z_neigh) * q
 				
 				neigh_ll[iter, ] <-
-					dbinom(data$y_neigh, size=data$N_neigh, prob=p_star_neigh, log = TRUE) + 			# detection
+					dbinom(data$y_neigh, size=data$N_neigh, prob=p_star_neigh, log = TRUE) +	# detection
 					p_ll[constants$state_neigh] +									# state effect
 					q_ll +															# false detection
 					psi_car															# occupancy ~ CAR
@@ -407,10 +375,10 @@ trainBayesODM_pStateMean_psiCar <- function(
 				p_star_island <- z_island * p[constants$state_island] + (1 - z_island) * q
 				
 				psi_islandMean <- combined[iter, 'psi_islandMean', drop=TRUE]
-				psi_islandSd <- combined[iter, 'psi_islandSd', drop=TRUE]
+				psi_islandTau <- combined[iter, 'psi_islandTau', drop=TRUE]
 				
 				psi_islandMean_ll <- dnorm(psi_islandMean, mean=0, sd=1000, log=TRUE)
-				psi_islandSd_ll <- dgamma(psi_islandSd, 0.001, 0.001, log=TRUE)
+				psi_islandSd_ll <- dgamma(psi_islandTau, 1, 0.001, log=TRUE)
 				
 				island_ll[iter, ] <-
 					dbinom(data$y_island, size=data$N_island, prob=p_star_island, log = TRUE) +	# detection
@@ -457,7 +425,110 @@ trainBayesODM_pStateMean_psiCar <- function(
 			...
 		)
 		
-		mcmcModel <- c(mcmcModel, list(code=code), meta=list(meta), waic=waic, loo=loo)
+		mcmcModel <- c(mcmcModel, list(code=code), meta=list(meta), waic=list(waic), loo=list(loo))
 		mcmcModel
 
 }
+
+.trainBayesODM_pStateMean_psiCar_neighsIslands <- nimble::nimbleCode({
+	
+	### likelihood for counties with neighborhoods
+	for (g in 1:numNeighs) {
+
+		# detection
+		y_neigh[g] ~ dbin(p_star_neigh[g], N_neigh[g])
+		p_star_neigh[g] <- z_neigh[g] * p[state_neigh[g]] + (1 - z_neigh[g]) * q
+		
+		# occupancy
+		z_neigh[g] ~ dbern(psi_neigh[g])
+		logit(psi_neigh[g]) <- psi_car[g]
+	}
+		
+	# county occupancy CAR
+	psi_tau ~ dgamma(0.001, 0.001)
+	psi_car[1:numNeighs] ~ dcar_normal(adj=carAdjCounty[1:lengthAdjCounties], weights=carWeightCounty[1:lengthAdjCounties], num=carNumCounty[1:numNeighs], tau=psi_tau, c=3, zero_mean=0)
+	
+	### likelihood for island counties
+	for (h in 1:numIslands) {
+
+		# detection
+		y_island[h] ~ dbin(p_star_island[h], N_island[h])
+		p_star_island[h] <- z_island[h] * p[state_island[h]] + (1 - z_island[h]) * q
+		
+		# occupancy
+		z_island[h] ~ dbern(psi_island[h])
+		logit(psi_island[h]) ~ dnorm(psi_islandMean, sd=psi_islandTau)
+
+	}
+
+	psi_islandMean ~ dnorm(0, tau=0.001)
+	psi_islandTau ~ dgamma(1, 0.001)
+	
+	### general priors
+	q ~ dbeta(1, 2)
+	
+	# detection
+	for (i in 1:numStates) {
+		p[i] ~ dbeta(1, 1)
+		qConstraint[i] ~ dconstraint(p[i] > q)
+	}
+	
+})
+
+.trainBayesODM_pStateMean_psiCar_neighsOnly <- nimble::nimbleCode({
+	
+	### likelihood for counties with neighborhoods
+	for (g in 1:numNeighs) {
+
+		# detection
+		y_neigh[g] ~ dbin(p_star_neigh[g], N_neigh[g])
+		p_star_neigh[g] <- z_neigh[g] * p[state_neigh[g]] + (1 - z_neigh[g]) * q
+		
+		# occupancy
+		z_neigh[g] ~ dbern(psi_neigh[g])
+		logit(psi_neigh[g]) <- psi_car[g]
+	}
+		
+	# county occupancy CAR
+	psi_tau ~ dgamma(0.001, 0.001)
+	psi_car[1:numNeighs] ~ dcar_normal(adj=carAdjCounty[1:lengthAdjCounties], weights=carWeightCounty[1:lengthAdjCounties], num=carNumCounty[1:numNeighs], tau=psi_tau, c=3, zero_mean=0)
+	
+	### general priors
+	q ~ dbeta(1, 2)
+	
+	# detection
+	for (i in 1:numStates) {
+		p[i] ~ dbeta(1, 1)
+		qConstraint[i] ~ dconstraint(p[i] > q)
+	}
+	
+})
+
+.trainBayesODM_pStateMean_psiCar_islandsOnly <- nimble::nimbleCode({
+	
+	### likelihood for island counties
+	for (h in 1:numIslands) {
+
+		# detection
+		y_island[h] ~ dbin(p_star_island[h], N_island[h])
+		p_star_island[h] <- z_island[h] * p[state_island[h]] + (1 - z_island[h]) * q
+		
+		# occupancy
+		z_island[h] ~ dbern(psi_island[h])
+		logit(psi_island[h]) ~ dnorm(psi_islandMean, sd=psi_islandTau)
+
+	}
+
+	psi_islandMean ~ dnorm(0, tau=0.001)
+	psi_islandTau ~ dgamma(1, 0.001)
+	
+	### general priors
+	q ~ dbeta(1, 2)
+	
+	# detection
+	for (i in 1:numStates) {
+		p[i] ~ dbeta(1, 1)
+		qConstraint[i] ~ dconstraint(p[i] > q)
+	}
+	
+})
