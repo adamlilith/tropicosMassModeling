@@ -4,7 +4,7 @@
 #' @param comp A compiled MCMC object produced by \code{\link[nimble]{compileNimble}} of class \code{MCMC_refClass}.
 #' @param mcmc An object of class \code{\link[coda]{mcmc}} or \code{\link[coda]{mcmc.list}}.
 #' @param inits A list object with initialization values. These values are not used; rather, the structure of the initialization values (i.e., names, number of elements) is used to create a new initialization object for each run.
-#' @param add Number of additional iterations to add. Note that iterations will be added \emph{after} thinning, so if \code{add} is 1000 and \code{thin} is 10, 100 additional iterations will be added.
+#' @param add Number of additional iterations to add. Note that iterations will be while \emph{after} thinning, so, fpr example, if \code{add} is 1000 and \code{thin} is 10, 100 additional iterations will be added.
 #' @param thin Thinning interval.
 #' @param verbose If \code{TRUE} display progress. Default is \code{FALSE}.
 #' @details Note that adding additional iterations may invalidate and WAIC that was calculated.
@@ -48,7 +48,7 @@ addToMcmc <- function(
 			mcmc = comp,
 			niter = add,
 			nburnin = 0,
-			thin = 1,
+			thin = thin,
 			nchains = 1,
 			inits = newInits,
 			progressBar = verbose,
@@ -58,11 +58,12 @@ addToMcmc <- function(
 		)
 		flush.console()
 
-		mcmcAdd <- as.matrix(mcmcAdd)
-		if (thin > 1) {
-			mcmcAdd <- mcmcAdd[seq(1, add, by=thin), ]
-		}
+		# mcmcAdd <- as.matrix(mcmcAdd)
+		# if (thin > 1) {
+			# mcmcAdd <- mcmcAdd[seq(1, add, by=thin), ]
+		# }
 
+		mcmcAdd <- as.matrix(mcmcAdd)
 		if (class(mcmc) == 'mcmc') {
 
 			mcmc <- rbind(mcmc, mcmcAdd[ , match(colnames(mcmc), colnames(mcmcAdd))])
@@ -82,4 +83,3 @@ addToMcmc <- function(
 	mcmc
 		
 }
-

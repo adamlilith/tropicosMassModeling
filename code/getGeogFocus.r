@@ -4,7 +4,8 @@
 #' @param x SpatialPolygonsDataFrame
 #' @param detect Character, name of column in \code{x} that contains detection data.  Zero values are assumed to represent no detections.
 #' @param expand Positive numeric, determines size of the focal region. For example, 0.5 corresponds to a region that comprises the occupied polygons plus a buffer with a width about 50% as large as the distance from the centroid of occupied polygons to the farthest occupied polygon.
-#' @param upper Character, name of column in \code{x} that contains names of "upper" level polygons that contain "lower" level polygons which are at the scale at which detection/non-detection is scored. This argument is used to remove all lower-level polygons that fall in the same upper-level polygon but have no detections among them. For example, if upper-level polygons are states/provinces and lower-level polygons are counties with detections, then this could be used to remove all states/provinces with no counties with detections. Note that \code{minLowerPolysPerUpper} must be specified. A value of \code{NULL} (default) will not remove any polygons regardless of the values of \code{minLowerPolysPerUpper}..
+#' @param upper Character, name of column in \code{x} that contains names of "upper" level polygons that contain "lower" level polygons which are at the scale at which detection/non-detection is scored. This argument is used to remove all lower-level polygons that fall in the same upper-level polygon but have no detections among them. For example, if upper-level polygons are states/provinces and lower-level polygons are counties with detections, then this could be used to remove all states/provinces with no counties with detections. Note that \code{minLowerPolysPerUpper} must be specified. A value of \code{NULL} (default) will not remove any polygons regardless of the values of \code{minLowerPolysPerUpper}.
+#' @param cullIslands Logical, if \code{TRUE} (default) then remove islands (i.e., counties with no neighbors). Islands are only removed if all islands in an "upper" polygon (i.e., state, province) have no detections.
 #' @param minLowerPolysPerUpper Character, only used if \code{upper} is not \code{NULL}. Minimum number of lower-level polygons necessary to be present in an upper-level polygon if none of them have any detections.
 #' @return SpatialPolygonsDataFrame.
 #' @examples
@@ -65,6 +66,7 @@ getGeogFocus <- function(
 	detect,
 	expand = 0.3,
 	upper = NULL,
+	cullIslands = TRUE,
 	minLowerPolysPerUpper = 10
 ) {
 
@@ -96,6 +98,31 @@ getGeogFocus <- function(
 	
 	focalIndices <- sp::over(focalAreaSpEa, xSpEa, returnList=TRUE)
 	focusSpEa <- x[focalIndices[[1]]$id, ]
+
+	# remove islands with no detections
+	if (cullIslands) {
+	
+		neighs <- spdep::poly2nb(focusSpEa, queen=TRUE)
+		islandIndex <- which(sapply(neighs, function(focusSpEa) { length(focusSpEa == 1) && (focusSpEa == 0) }))
+
+		bads <- integer()
+		if (length(islandIndex) > 0) {
+			
+			islandUppers <- unique(x@data[islandIndex, upper])
+			for (islandUpper in islandUppers) {
+			
+				lowersInUppers <- which(x@data[ , upper] == islandUpper)
+				lowersAreIslands <- intersect(lowersInUppers, islandIndex)
+			
+				if (all(focusSpEa@data[lowersAreIslands, detect] == 0)) bads <- c(bads, lowersAreIslands)
+			
+			}
+			
+		}
+		
+		if (length(bads) > 0) focusSpEa <- focusSpEa[-bads, ]
+	
+	}
 	
 	# removing states with with no detections that have too-few counties
 	if (!is.null(upper)) {

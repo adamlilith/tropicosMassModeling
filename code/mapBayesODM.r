@@ -3,12 +3,14 @@
 #' Make display maps for a species.
 #' @param species Name of species
 #' @param family Family of species
-#' @param focus2Sp Spatial data frame object
+#' @param focus2Sp Spatial data frame object in equal-area projection
 #' @param gadm1Sp Spatial object with states, does not have to be cropped to focus2Sp
-#' @param mcmc MCMC list object from NIMBLE
+#' @param q Vector of posterior samples of false positive rate of detection
+#' @param waic WAIC object or \code{NULL}
+#' @param loo LOO object or \code{NULL}
 #' @param minUnconverged Proportion of unconverged parameters that is acceptable for a model
 #' @param outDir Directory to which to save image
-#' @param isOk TRUE/FALSE if model is sufficiently converged. If \code{NULL} the this will be calculated.
+#' @param isOk TRUE/FALSE if model is sufficiently converged.
 #' @param appendToName \code{NULL} or character to append to file name.
 #' @param footer \code{NULL} or character to append to add to footer.
 #' @param ... Arguments to pass to text()
@@ -20,10 +22,12 @@ mapBayesODM <- function(
 	family,
 	focus2Sp,
 	gadm1Sp,
-	mcmc,
+	q,
+	waic,
+	loo,
 	minUnconverged,
 	outDir,
-	isOk = NULL,
+	isOk,
 	appendToName = NULL,
 	footer = NULL,
 	...
@@ -50,46 +54,33 @@ mapBayesODM <- function(
 	### prepare plot elements
 	#########################
 
-		occ2Sp <- focus2Sp[focus2Sp@data$detect > 0, ]
-	
 		# centroids of counties with occurrences
-		# focus2SpEa <- sp::spTransform(focus2Sp, enmSdm::getCRS('mollweide', TRUE))
-		focus2SpEa <- sp::spTransform(focus2Sp, enmSdm::getCRS('robinson', TRUE))
-		centsSpEa <- rgeos::gCentroid(focus2SpEa[focus2SpEa@data$detect > 0, ], byid=TRUE)
-		centsSp <- sp::spTransform(centsSpEa, raster::projection(focus2Sp))
+		occ2Sp <- focus2Sp[focus2Sp@data$detect > 0, ]
+		centsSp <- rgeos::gCentroid(focus2Sp[focus2Sp@data$detect > 0, ], byid=TRUE)
 		
-		# fox any potentially orphaned holes
-		focus2SpEa <- rgeos::gBuffer(focus2SpEa, width=0, byid=TRUE)
-		focus2Sp <- sp::spTransform(focus2SpEa, sp::CRS(raster::projection(focus2Sp)))
+		# fix any potentially orphaned holes
+		focus2Sp <- rgeos::gBuffer(focus2Sp, width=0, byid=TRUE)
 		
 		# create plotting extent: focal region plus a buffer
-		extEa <- raster::extent(focus2SpEa)
-		extSpEa <- as(extEa, 'SpatialPolygons')
-		# raster::projection(extSpEa) <- enmSdm::getCRS('mollweide')
-		raster::projection(extSpEa) <- enmSdm::getCRS('robinson')
+		ext <- raster::extent(focus2Sp)
+		extSp <- as(ext, 'SpatialPolygons')
+		raster::projection(extSp) <- raster::projection(focusSp)
 		
-		extCentSpEa <- rgeos::gCentroid(extSpEa)
-		maxDist_m <- rgeos::gDistance(extCentSpEa, extSpEa, hausdorff=TRUE)
-		extSpEa <- rgeos::gBuffer(extSpEa, width=0.05 * maxDist_m)
+		extCentSp <- rgeos::gCentroid(extSp)
+		maxDist_m <- rgeos::gDistance(extCentSp, extSp, hausdorff=TRUE)
+		extSp <- rgeos::gBuffer(extSp, width=0.05 * maxDist_m)
 		
-		extSp <- sp::spTransform(extSpEa, sp::CRS(raster::projection(focus2Sp)))
 		ext <- raster::extent(extSp)
 		extSp <- as(ext, 'SpatialPolygons')
 		projection(extSp) <- raster::projection(focus2Sp)
 
 		# crop GADM1
 		extSp_inGadm <- sp::spTransform(extSp, sp::CRS(raster::projection(gadm1Sp)))
-		
 		gadm1SpCrop <- raster::crop(gadm1Sp, extSp_inGadm)
 		gadm1SpCrop <- sp::spTransform(gadm1SpCrop, sp::CRS(raster::projection(focusSp)))
 
 	### plot
 	########
-
-		if (is.null(isOk)) {
-			conv <- rhatStats(mcmcModel$mcmc$samples, rhatThresh=1.1, minConv=minUnconverged)
-			isOk <- conv$sufficient
-		}
 
 		# ok <- if (isOk) { 'ok' } else { 'notOk'}
 		ok <- 'notAssessed'
@@ -209,18 +200,16 @@ mapBayesODM <- function(
 			if (!isOk) mtext(text='Insufficient convergence', at=c(0.01), outer=TRUE, cex=1, line=-1.3, adj=0, col='red')
 			
 			text <- paste(footer, ' | ', date())
-			mtext(text=text, side=1, at=0.975, outer=TRUE, cex=0.35, line=-0.27, adj=1)
+			mtext(text=text, side=1, at=0.985, outer=TRUE, cex=0.35, line=-0.27, adj=1)
 			
-			if ('q' %in% rownames(mcmc$summary$all.chains)) {
-			
-				q <- round(mcmc$summary$all.chains['q', 'Mean'], 3)
-				qLow <- round(mcmc$summary$all.chains['q', '95%CI_low'], 3)
-				qHigh <- round(mcmc$summary$all.chains['q', '95%CI_upp'], 3)
+			qMean <- round(mean(q), 3)
+			qLow <- round(quantile(q, 0.05), 3)
+			qHigh <- round(quantile(q, 0.95), 3)
 
-				msg <- paste0('Probability of mistaken identification in any county with a single specimen in which species is truly absent: ', sprintf('%0.3f', q), ' (90% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
-				mtext(msg, side=1, at=0.01, outer=TRUE, cex=0.35, line=-0.3, adj=0)
-			
-			}
+			msg1 <- paste0('WAIC: ', round(waic$estimates['waic', 1], 2), ' | LOO: ', round(loo$estimates['looic', 1], 2))
+			msg2 <- paste0('Probability all specimens in a county in which ', species, ' is truely absent are mistaken identifications: ', sprintf('%0.3f', qMean), ' (90% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
+			mtext(msg1, side=1, at=0.005, outer=TRUE, cex=0.35, line=-0.8, adj=0)
+			mtext(msg2, side=1, at=0.005, outer=TRUE, cex=0.35, line=-0.3, adj=0)
 			
 		dev.off()
 	

@@ -3,6 +3,7 @@
 ### This script runs distribution models for each species in TROPICOS with sufficient data.
 ###
 ### source('C:/Ecology/Drive/R/tropicosMassModeling/tropicosMassModel.r')
+### source('H:/Global Change Program/Research/tropicosMassModeling/tropicosMassModel.r')
 
 ### CONTENTS ###
 ### setup
@@ -19,7 +20,9 @@
 #############
 
 	# set working directory
-	setwd('C:/Ecology/Drive/R/tropicosMassModeling')
+	# setwd('C:/Ecology/Drive/R/tropicosMassModeling')
+	# setwd('E:/Ecology/Drive/R/tropicosMassModeling')
+	setwd('H:/Global Change Program/Research/tropicosMassModeling')
 		
 	# manage memory
 	memory.limit(memory.limit() * 2^30)
@@ -30,23 +33,34 @@
 	print(date())
 
 	options(stringsAsFactors=FALSE)
+	outDir <- 'H:/Global Change Program/Research/tropicosMassModeling/'
 
-	these <- 1:80 # 1-80 # IP
-	# these <- 81:160 # IP
+	# these <- 1:100 # 1-100 # IP
+	these <- 101:200 # 101-200
 	
 	### settings
 	############
 
-		### model settings
-		niter <- 21000 # burn-in + sampling
-		maxIter <- 500000 # maximum number of iterations (not including burn-in)
-		nburnin <- 1000
+		# model settings
+		niter <- 105000 # burn-in + sampling
+		minIter <- 100000 # minumum number of iterations (not including burn-in)
+		maxIter <- 1000000 # maximum number of iterations (not including burn-in)
+		nburnin <- 5000
 		nchains <- 4
-		nsamples <- 10000
-		thin <- max(1, floor((niter - nburnin) / nsamples))
+		nsamples <- 1000
+		thin <- (niter - nburnin) / nsamples
+
+		# # model settings
+		# niter <- 200 # burn-in + sampling
+		# minIter <- 100 # maximum number of iterations (not including burn-in)
+		# maxIter <- 300 # maximum number of iterations (not including burn-in)
+		# nburnin <- 100
+		# nchains <- 4
+		# nsamples <- 100
+		# thin <- max(1, floor((niter - nburnin) / nsamples))
 
 		### quality assurance settings
-		minUnconverged <- 0 # minimum number of coefficients that can be uncoverged (at rhat > <-  1.1) for a model to be used
+		minUnconverged <- 0.025 # minimum number of coefficients that can be uncoverged (at rhat > <-  1.1) for a model to be used
 		minNumDupsToModel <- 2 # minimum number of duplicate records in a county necessary to generate a model
 		minNumEffortsToModel <- 200 # minimum number of other species records that must be in the study region to model the focal species
 		minPropCountiesWithEffortToModel <- 0.3 # minimum proportion of counties in the study region with any effort necessary to model the species
@@ -55,7 +69,7 @@
 		minOccCounties <- 10 # minimum number of counties a species must appear in to model
 		minNumRecords <- 10 # minimum number of records (across/within counties) to model
 
-		saveNotOk <- TRUE # if TRUE then save results for models of species with insufficient convergence
+		saveIfNotOk <- TRUE # if TRUE then save results for models of species with insufficient convergence
 
 		# states to ignore... Hawaii causes geographic projection problems on some maps
 		# ignoreStates <- 'Hawaii'
@@ -66,16 +80,15 @@
 		
 		longLat <- c('longitude', 'latitude')
 		family <- 'Apocynaceae'
-	
-	
+		
 	# load/install packages
-	packs <- c('BIEN', 'cleangeo', 'coda', 'data.table', 'loo', 'mcmcplots', 'nimble', 'spdep', 'wiqid', 'stringi', 'sp', 'tidyverse', 'raster', 'rgeos', 'scales', 'spocc', 'taxize', 'terra')
+	packs <- c('adehabitatHR', 'BIEN', 'cleangeo', 'coda', 'data.table', 'loo', 'mcmcplots', 'nimble', 'spdep', 'wiqid', 'stringi', 'sp', 'tidyverse', 'raster', 'remotes', 'rgeos', 'scales', 'spocc', 'taxize', 'terra')
 		# # if loading terra causes an error, install from GitHib:
 		# remotes::install_github('rspatial/terra')
 	for (pack in packs) {
 		worked <- do.call(require, list(package=pack))
 		if (!worked) {
-			do.call(install.packages, list(package=pack))
+			install.packages(pack)
 			do.call(library, list(package=pack))
 		}
 	}
@@ -84,7 +97,7 @@
 	for (pack in packs) {
 		worked <- do.call(require, list(package=pack))
 		if (!worked) {
-			do.call(remotes::install_github, list(package=paste0('adamlilith/', pack)))
+			do.call(remotes::install_github, list(repo=paste0('adamlilith/', pack)))
 			do.call(library, list(package=pack))
 		}
 	}
@@ -515,11 +528,11 @@ omnibus::say('#############')
 
 	### model each species
 	# for (species in speciesList) {
-	# for (species in speciesList[these]) {
-	for (species in 'Asclepias albicans') {
-	# for (species in 'Vallesia glabra') {
-	# for (species in 'Amsonia illustris') {
+	for (species in speciesList[these]) {
 	# for (species in 'Asclepias albicans') {
+	# for (species in 'Asclepias circinalis') {
+	# for (species in 'Amsonia illustris') {
+	# for (species in 'Asclepias latifolia') {
 
 		omnibus::say(species, ' ', date(), level=2)
 	
@@ -570,6 +583,7 @@ omnibus::say('#############')
 							detect = 'detect',
 							expand = expand,
 							upper = 'NAME_1',
+							cullIslands = TRUE,
 							minLowerPolysPerUpper = minEmptyCountiesPerState
 						)
 						
@@ -602,20 +616,27 @@ omnibus::say('#############')
 						### model
 						#########
 		
-							# omnibus::say('Constant p, psi ~ CAR...', level=3)
-							# mcmcModel_pConstant_psiCar <- trainBayesODM_pConstant_psiCar(
-								# shape=focusSp,
-								# effort='effort',
-								# detect='detect',
-								# stateProv='NAME_1',
-								# county='NAME_2',
-								# niter=niter,
-								# nburnin=nburnin,
-								# nchains=nchains,
-								# thin=thin,
-								# na.rm=TRUE,
-								# verbose=TRUE
-							# )
+							omnibus::say('Constant p, psi ~ CAR...', level=3)
+							mcmcModel_pConstant_psiCar <- trainBayesODM_pConstant_psiCar(
+								shape=focusSp,
+								effort='effort',
+								detect='detect',
+								stateProv='NAME_1',
+								county='NAME_2',
+								niter=niter,
+								nburnin=nburnin,
+								nchains=nchains,
+								thin=thin,
+								raf=TRUE,
+								minIter=minIter,
+								maxIter=maxIter,
+								minUnconverged=minUnconverged,
+								nsamples=nsamples,
+								na.rm=TRUE,
+								verbose=TRUE
+							)
+
+							gc()
 							
 							omnibus::say('Constant p constant by state, psi ~ CAR...', level=3)
 							mcmcModel_pStateMean_psiCar <- trainBayesODM_pStateMean_psiCar(
@@ -629,6 +650,7 @@ omnibus::say('#############')
 								nchains=nchains,
 								thin=thin,
 								raf=TRUE,
+								minIter=minIter,
 								maxIter=maxIter,
 								minUnconverged=minUnconverged,
 								nsamples=nsamples,
@@ -636,42 +658,34 @@ omnibus::say('#############')
 								verbose=TRUE
 							)
 							
-							# omnibus::say('Variable p by state, psi ~ dbeta...', level=3)
-							# mcmcModel_pMaxVarByState_psi <- trainBayesODM_pMaxVarByState_psi(
-								# shape=focusSp,
-								# effort='effort',
-								# detect='detect',
-								# stateProv='NAME_1',
-								# county='NAME_2',
-								# niter=niter,
-								# nburnin=nburnin,
-								# nchains=nchains,
-								# thin=thin,
-								# na.rm=TRUE,
-								# verbose=TRUE
-							# )
-
-							# omnibus::say('Variable p by state, psi ~ CAR...', level=3)
-							# mcmcModel_pMaxVarByState_psiCar <- trainBayesODM_pMaxVarByState_psiCar(
-								# shape=focusSp,
-								# effort='effort',
-								# detect='detect',
-								# stateProv='NAME_1',
-								# county='NAME_2',
-								# niter=niter,
-								# nburnin=nburnin,
-								# nchains=nchains,
-								# thin=thin,
-								# na.rm=TRUE,
-								# verbose=TRUE
-							# )
+							gc()
+							
+							omnibus::say('Variable p by state, psi ~ CAR...', level=3)
+							mcmcModel_pMaxVarByState_psiCar <- trainBayesODM_pMaxVarByState_psiCar(
+								shape=focusSp,
+								effort='effort',
+								detect='detect',
+								stateProv='NAME_1',
+								county='NAME_2',
+								niter=niter,
+								nburnin=nburnin,
+								nchains=nchains,
+								thin=thin,
+								raf=TRUE,
+								minIter=minIter,
+								maxIter=maxIter,
+								minUnconverged=minUnconverged,
+								nsamples=nsamples,
+								na.rm=TRUE,
+								verbose=TRUE
+							)
 
 						### process model output
 						########################
 
 						# modelNames <- c('mcmcModel_pConstant_psiCar', 'mcmcModel_pStateMean_psiCar', 'mcmcModel_pMaxVarByState_psiCar', 'mcmcModel_pMaxVarByState_psi')
 						# modelNames <- c('mcmcModel_pConstant_psiCar', 'mcmcModel_pStateMean_psiCar', 'mcmcModel_pMaxVarByState_psiCar')
-						modelNames <- c('mcmcModel_pStateMean_psiCar')
+						modelNames <- c('mcmcModel_pConstant_psiCar', 'mcmcModel_pStateMean_psiCar', 'mcmcModel_pMaxVarByState_psiCar')
 						for (modelName in modelNames) {
 						
 							model <- get(modelName)
@@ -689,12 +703,12 @@ omnibus::say('#############')
 							### output
 							##########
 							
-								if (saveNotOk | isOk) {
+								if (saveIfNotOk | isOk) {
 									
-									outDir <- paste0('./models/', ok, '/', famSpp)
-									omnibus::dirCreate(outDir)
+									thisOutDir <- paste0(outDir, '/models/', ok, '/', famSpp)
+									omnibus::dirCreate(thisOutDir)
 									
-									save(model, file=paste0(outDir, '/', famSpp, '_', modelName, '.rda'))
+									save(model, file=paste0(thisOutDir, '/', famSpp, '_', modelName, '.rda'))
 									
 									### stats
 									#########
@@ -704,7 +718,7 @@ omnibus::say('#############')
 									detecteds <- focusSp@data$detect
 									efforts <- focusSp@data$effort
 									
-									sink(paste0(paste0(outDir, '/', famSpp, '_', modelName, '.txt')))
+									sink(paste0(paste0(thisOutDir, '/', famSpp, '_', modelName, '.txt')))
 									
 										cat(species, '\n')
 										cat(date(), '\n')
@@ -720,15 +734,20 @@ omnibus::say('#############')
 										
 										cat('MODEL SETTINGS\n')
 										cat('niter ', niter, '\n')
+										cat('maxIter ', maxIter, '\n')
 										cat('nburnin ', nburnin, '\n')
 										cat('nchains ', nchains, '\n')
 										cat('thin ', thin, '\n')
 										cat('total samples ', (niter - nburnin) / thin, ' per chain\n\n')
 
 										cat('MODEL OUTPUT\n')
-										if (exists('WAIC', where=model$mcmc)) cat('WAIC ', round(model$mcmc$WAIC, 3), '\n')
+										say('WAIC')
+										print(model$waic)
 										
-										cat('Proportion of non-converged parameters (rhat > 1.1) ', conv$propUnconv, '\n\n')
+										cat('\nLOO (leave-one-out crossvalidation)')
+										print(model$loo)
+										
+										cat('\nProportion of non-converged parameters (rhat > 1.1) ', conv$propUnconv, '\n\n')
 
 										cat('Summary of rhats:', '\n\n')
 										print(summary(conv$rhat))
@@ -749,7 +768,7 @@ omnibus::say('#############')
 									occs2Sp <- focusSp[focusSp@data$detect > 0, ]
 									centsSp <- gCentroid(occs2Sp, byid=TRUE)
 							
-									png(paste0(outDir, '/', famSpp, '_diagnostics_', modelName, '.png'), width=1400, height=1000, res=120)
+									png(paste0(thisOutDir, '/', famSpp, '_diagnostics_', modelName, '.png'), width=1400, height=1000, res=120)
 									
 										par(mfrow=c(2, 2), oma=c(2, 0, 4, 0), mar=c(1, 1, 1, 1), cex.main=1.2)
 
@@ -841,11 +860,11 @@ omnibus::say('#############')
 
 									if (isOk) {
 										
-										dirCreate(outDir, '/shapefiles')
+										dirCreate(thisOutDir, '/shapefiles')
 										
-										raster::shapefile(out2Sp, paste0(outDir, '/shapefiles/', famSpp, '_', modelName), overwrite=TRUE)
+										raster::shapefile(out2Sp, paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName), overwrite=TRUE)
 
-										sink(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '_README.txt'))
+										sink(paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName, '_README.txt'))
 										
 											say(family, ': ', species)
 											say(date(), post=2)
@@ -871,15 +890,15 @@ omnibus::say('#############')
 											
 										sink()						
 
-										toZip <- listFiles(paste0(outDir, '/shapefiles'), pattern=famSpp)
-										a <- zip::zipr(paste0(outDir, '/', famSpp, '_', modelName, '.zip'), toZip)
+										toZip <- listFiles(paste0(thisOutDir, '/shapefiles'), pattern=famSpp)
+										a <- zip::zipr(paste0(thisOutDir, '/', famSpp, '_', modelName, '.zip'), toZip)
 										
-										done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.dbf'))
-										done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.prj'))
-										done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.shp'))
-										done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '.shx'))
-										done <- file.remove(paste0(outDir, '/shapefiles/', famSpp, '_', modelName, '_README.txt'))
-										unlink(paste0(outDir, '/shapefiles'), recursive=TRUE)
+										done <- file.remove(paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName, '.dbf'))
+										done <- file.remove(paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName, '.prj'))
+										done <- file.remove(paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName, '.shp'))
+										done <- file.remove(paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName, '.shx'))
+										done <- file.remove(paste0(thisOutDir, '/shapefiles/', famSpp, '_', modelName, '_README.txt'))
+										unlink(paste0(thisOutDir, '/shapefiles'), recursive=TRUE)
 										
 									} # if sufficient convergence
 											
@@ -887,16 +906,18 @@ omnibus::say('#############')
 									#################
 
 									say('Maps...')
-								
+
 									mapBayesODM(
 										species=species,
 										family=family,
 										focus2Sp=out2Sp,
 										gadm1Sp=gadm1,
-										mcmc=model$mcmc,
+										q = c(model$mcmc$samples$chain1[ , 'q'], model$mcmc$samples$chain2[ , 'q'], model$mcmc$samples$chain3[ , 'q'], model$mcmc$samples$chain4[ , 'q']),
+										waic = model$waic,
+										loo = model$loo,
 										minUnconverged=minUnconverged,
 										isOk=isOk,
-										outDir=outDir,
+										outDir=thisOutDir,
 										appendToName=modelName,
 										footer=modelName
 										# pos=4
@@ -912,7 +933,7 @@ omnibus::say('#############')
 						### clean up
 						
 							rm(mcmcModel_pConstant_psiCar, mcmcModel_pStateMean_psiCar, mcmcModel_pMaxVarByState_psiCar, mcmModel_pMaxVarByState_psi)
-							rm(focus2Sp, out2Sp)
+							rm(model, focus2Sp, out2Sp)
 							gc()
 							
 					} # if there is sufficient effort
