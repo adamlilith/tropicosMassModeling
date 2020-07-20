@@ -54,7 +54,7 @@ rafLewis <- function(
 		comp,
 		niter = niter,
 		nburnin = nburnin,
-		thin = 1,
+		thin = thin,
 		nchains = 1,
 		inits = inits,
 		progressBar = verbose,
@@ -68,11 +68,12 @@ rafLewis <- function(
 	mcmc <- as.matrix(mcmc)
 	
 	rand <- round(1E6 * runif(1))
-	tempFile <- paste0('E:/ecology/!Scratch/temp', rand, '.rda')
+	tempFile <- paste0('./temp/temp', rand, '.rda')
 	save(mcmc, file=tempFile)
 	rm(mcmc)
 	gc()
 	load(tempFile)
+	file.remove(tempFile)
 
 	# RL method
 	args <- list(data = mcmc, ...)
@@ -97,22 +98,21 @@ rafLewis <- function(
 
 	mcmc <- as.mcmc(mcmc)
 	
-	rand <- round(1E6 * runif(1))
-	tempFile <- paste0('E:/ecology/!Scratch/temp', rand, '.rda')
 	save(mcmc, file=tempFile)
 	rm(mcmc)
 	gc()
 	load(tempFile)
-
+	file.remove(tempFile)
+	
 	if (!sufficient & retry) {
 		
 		while (!sufficient & niter <= maxIter & niter < minIter) {
 
-			add <- round(increment * niter)
+			add <- round(increment * niter) * thin
 			niter <- add + niter
 		
 			if (verbose) omnibus::say('Increasing iterations to ', niter, ' (before thinning, including burn-in)...')
-			mcmc <- addToMcmc(comp = comp, mcmc = mcmc, inits = inits, add = add, thin = 1)
+			mcmc <- addToMcmc(comp = comp, mcmc = mcmc, inits = inits, add = add, thin = thin)
 
 			save(mcmc, file=tempFile)
 			rm(mcmc)
@@ -135,18 +135,19 @@ rafLewis <- function(
 		
 	}
 	
-	# thin
-	if (coda::niter(mcmc) > nsamples & thin > 1) {
-		keeps <- seq(1, coda::niter(mcmc), by=thin)
-		mcmc <- mcmc[keeps, ]
-		mcmc <- as.mcmc(mcmc)
+	# # thin
+	# if (coda::niter(mcmc) > nsamples & thin > 1) {
+		
+		# keeps <- seq(1, coda::niter(mcmc), by=thin)
+		# mcmc <- mcmc[keeps, ]
+		# mcmc <- as.mcmc(mcmc)
 
-		save(mcmc, file=tempFile)
-		rm(mcmc)
-		gc()
-		load(tempFile)
+		# save(mcmc, file=tempFile)
+		# rm(mcmc)
+		# gc()
+		# load(tempFile)
 
-	}
+	# }
 	
 	if (sufficient) {
 		

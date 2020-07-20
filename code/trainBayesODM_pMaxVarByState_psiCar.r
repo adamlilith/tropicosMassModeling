@@ -265,12 +265,15 @@ trainBayesODM_pMaxVarByState_psiCar <- function(
 				verbose = verbose
 			)
 
+			rl$mcmc <- .removeVariablesFromMcmc(rl$mcmc, exact=exact, pattern=pattern)
+
 			rand <- round(1E6 * runif(1))
-			tempFile <- paste0('E:/ecology/!Scratch/temp', rand, '.rda')
+			tempFile <- paste0('./temp/temp', rand, '.rda')
 			save(rl, file=tempFile)
 			rm(rl)
 			gc()
 			load(tempFile)
+			file.remove(tempFile)
 			
 		}
 		
@@ -365,7 +368,7 @@ trainBayesODM_pMaxVarByState_psiCar <- function(
 					dbinom(data$y_neigh, size=data$N_neigh, prob=p_neigh, log = TRUE) +	# detection
 					p_max_ll[constants$state_neigh] +									# state effect
 					q_ll +															# false detection
-					psi_car															# occupancy ~ CAR
+					psi_car_ll														# occupancy ~ CAR
 
 			} # next iteration
 			
