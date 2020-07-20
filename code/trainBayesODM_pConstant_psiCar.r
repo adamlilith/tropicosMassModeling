@@ -251,11 +251,15 @@ trainBayesODM_pConstant_psiCar <- function(
 				verbose = verbose
 			)
 
+			rl$mcmc <- .removeVariablesFromMcmc(rl$mcmc, exact=exact, pattern=pattern)
+			
 			rand <- round(1E6 * runif(1))
-			save(rl, file=paste0('E:/ecology/!Scratch/temp', rand, '.rda'))
+			tempFile <- paste0('./temp/temp', rand, '.rda')
+			save(rl, file=tempFile)
 			rm(rl)
 			gc()
-			load(paste0('E:/ecology/!Scratch/temp', rand, '.rda'))
+			load(tempFile)
+			file.remove(tempFile)
 			
 		}
 		
@@ -347,10 +351,10 @@ trainBayesODM_pConstant_psiCar <- function(
 				p_star_neigh <- z_neigh * p + (1 - z_neigh) * q
 				
 				neigh_ll[iter, ] <-
-					dbinom(data$y_neigh, size=data$N_neigh, prob=p_star_neigh, log = TRUE) +	# detection
+					dbinom(data$y_neigh, size=data$N_neigh, prob=p_star_neigh, log=TRUE) +	# detection
 					p_ll +														# state effect
 					q_ll +															# false detection
-					psi_car															# occupancy ~ CAR
+					psi_car_ll														# occupancy ~ CAR
 
 			} # next iteration
 			

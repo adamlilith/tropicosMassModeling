@@ -206,7 +206,8 @@ mapBayesODM <- function(
 			qLow <- round(quantile(q, 0.05), 3)
 			qHigh <- round(quantile(q, 0.95), 3)
 
-			msg1 <- paste0('WAIC: ', round(waic$estimates['waic', 1], 2), ' | LOO: ', round(loo$estimates['looic', 1], 2))
+			# msg1 <- paste0('WAIC: ', round(waic$estimates['waic', 1], 2), ' | LOO: ', round(loo$estimates['looic', 1], 2))
+			msg1 <- ''
 			msg2 <- paste0('Probability all specimens in a county in which ', species, ' is truely absent are mistaken identifications: ', sprintf('%0.3f', qMean), ' (90% CI: ', sprintf('%0.3f', qLow), '-', sprintf('%0.3f', qHigh), ')')
 			mtext(msg1, side=1, at=0.005, outer=TRUE, cex=0.35, line=-0.8, adj=0)
 			mtext(msg2, side=1, at=0.005, outer=TRUE, cex=0.35, line=-0.3, adj=0)
